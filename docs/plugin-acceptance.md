@@ -23,7 +23,11 @@ cases as an ordinary user, as in the recorded environment.
 **Recorded result:** `npm run check` passed: TypeScript build and **30 tests in
 2 files** (63.97 seconds). This includes **26 new plugin conversation cases** and
 four unchanged historical packet cases. The latter are reported separately and
-are not plugin acceptance. `git diff --check` also passed.
+are not plugin acceptance. A clean clone at `9b4fea5`, restored with `npm ci
+--ignore-scripts --no-audit --no-fund` (267 packages), independently passed the
+same 30 tests in 64.16 seconds. A subsequent recovery-guard regression test also
+passed; final-head verification is recorded with the delivery PR.
+`git diff --check` also passed.
 
 ## Ticket evidence
 
@@ -72,6 +76,8 @@ that drove implementation, preserved here instead of discarding them:
 20. Recovery journal still unwritable: an installed checkpoint was incorrectly
     reported as "previous context retained". Recovery now distinguishes absent
     commit from failure updating the journal after a verified installed commit.
+21. Corrupt required state still allowed a manual native compaction before the
+    third-count check. The recovery guard now precedes cadence handling.
 
 Some acceptance cases already passed through an earlier vertical slice (for
 example initial persistent counting); they were retained as regression evidence,

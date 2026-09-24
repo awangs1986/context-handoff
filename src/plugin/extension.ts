@@ -185,6 +185,10 @@ export default function handoff(pi: ExtensionAPI) {
     }
   });
   pi.on("session_before_compact", async (event, ctx) => {
+    if (recoveryBlocked) {
+      report("Repair Handoff state before compacting");
+      return { cancel: true };
+    }
     let count = 0;
     for (const e of ctx.sessionManager.getBranch())
       if (e.type === "compaction") {

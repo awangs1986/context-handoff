@@ -769,6 +769,11 @@ it("reports corrupt required state and prevents automatic or prompted execution 
     await three(c);
     await c.promptAndWait("Continue inspection.", undefined, 15000);
     await c.compact();
+    await c.promptAndWait(
+      "Pending known context before restart.",
+      undefined,
+      15000,
+    );
     const file = (await c.getState()).sessionFile!;
     await c.stop();
     await writeFile(`${file}.handoff.json`, "corrupt");
@@ -777,6 +782,7 @@ it("reports corrupt required state and prevents automatic or prompted execution 
     const count = f.requests.length;
     await c.prompt("Continue work.");
     await c.getState();
+    await expect(c.compact()).rejects.toThrow("Compaction cancelled");
     expect(f.requests).toHaveLength(count);
     expect(JSON.stringify((await c.getEntries()).entries)).toContain(
       "Repair Handoff state before submitting new work",
