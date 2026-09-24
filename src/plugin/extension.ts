@@ -1,0 +1,372 @@
+import {
+  load,
+  save,
+  confirmCommit,
+  hasCommit,
+  historyFingerprint,
+} from "./journal.js";
+import { registerEvidence } from "./evidence.js";
+import { projectSnapshot } from "./project.js";
+import { randomUUID } from "node:crypto";
+import {
+  sources,
+  validate,
+  bytes,
+  digest,
+  synthesisPrompt,
+  selectSources,
+  evidenceIndex,
+} from "./task-state.js";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+
+export default function handoff(pi: ExtensionAPI) {
+  registerEvidence(pi);
+  let inputEpoch = 0;
+  let pendingContinuation: { epoch: number; nextAction: string } | undefined;
+  let recoveryBlocked = false;
+  let unsafePersistence = false;
+  let currentContext: ExtensionContext | undefined;
+  const report = (error: unknown) => {
+    const message = `Handoff stopped: ${String(error).slice(0, 500)}`;
+    if (unsafePersistence) {
+      currentContext?.ui.notify(message, "error");
+      return;
+    }
+    pi.sendMessage(
+      { customType: "pi-handoff-error", content: message, display: true },
+      { triggerTurn: false },
+    );
+  };
+  pi.on("session_start", (_event, ctx) => {
+    recoveryBlocked = false;
+    unsafePersistence = false;
+    currentContext = ctx;
+    try {
+      const journal = load(ctx);
+      if (!journal) {
+        const inherited = ctx.sessionManager
+          .getBranch()
+          .filter(
+            (e: any) =>
+              e.type === "compaction" && e.details?.plugin === "pi-handoff",
+          )
+          .at(-1) as any;
+        if (inherited) {
+          if (_event.reason !== "fork")
+            throw new Error("Required Handoff journal missing");
+          const summaryHash = digest(inherited.summary);
+          confirmCommit(ctx, summaryHash);
+          save(ctx, {
+            version: 1,
+            session: ctx.sessionManager.getSessionId(),
+            summaryHash,
+            phase: "installed",
+            continuation: "none",
+          });
+        }
+        return;
+      }
+      if (journal.phase === "prepared") {
+        if (hasCommit(ctx, journal.summaryHash)) {
+          confirmCommit(ctx, journal.summaryHash);
+          save(ctx, { ...journal, phase: "installed", continuation: "none" });
+          report(
+            "Recovered installed context; automatic continuation not replayed. Inspect pending work.",
+          );
+        } else {
+          report(
+            "Interrupted preparation; previous context retained. No action replayed.",
+          );
+        }
+      } else {
+        confirmCommit(ctx, journal.summaryHash);
+        if (journal.continuation === "claimed")
+          report(
+            "Continuation outcome uncertain after interruption. Inspect results before continuing; no action replayed.",
+          );
+      }
+    } catch (error) {
+      recoveryBlocked = true;
+      report(error);
+    }
+  });
+  pi.on("agent_before_settle", (event, ctx) => {
+    const pending = pendingContinuation;
+    pendingContinuation = undefined;
+    if (
+      !pending ||
+      pending.epoch !== inputEpoch ||
+      recoveryBlocked ||
+      ctx.signal?.aborted ||
+      ctx.hasPendingMessages()
+    )
+      return;
+    return {
+      continue: true,
+      entries: [
+        {
+          type: "custom_message",
+          customType: "pi-handoff-continue",
+          content: `Continue the existing authorized task: ${pending.nextAction}`,
+          display: false,
+        },
+      ],
+    };
+  });
+  pi.on("agent_settled", (_event, ctx) => {
+    pendingContinuation = undefined;
+    try {
+      const journal = load(ctx);
+      if (journal?.continuation === "claimed")
+        save(ctx, { ...journal, continuation: "settled" });
+    } catch (error) {
+      recoveryBlocked = true;
+      report(error);
+    }
+  });
+  const activeTools = new Set<string>();
+  pi.on("tool_execution_start", (e) => {
+    activeTools.add(e.toolCallId);
+  });
+  pi.on("tool_execution_end", (e) => {
+    activeTools.delete(e.toolCallId);
+  });
+  pi.events.on("pi-handoff:work", (data: unknown) => {
+    const d = data as any;
+    if (
+      d &&
+      typeof d.id === "string" &&
+      typeof d.tool === "string" &&
+      ["running", "settled", "unknown"].includes(d.status)
+    )
+      pi.appendEntry("pi-handoff-work", {
+        id: d.id,
+        tool: d.tool,
+        status: d.status,
+      });
+  });
+  const assertSettled = (entries: any[]) => {
+    if (activeTools.size) throw new Error("Tools have not settled");
+    const work = new Map<string, any>();
+    const known = new Set([
+      "read",
+      "write",
+      "edit",
+      "bash",
+      "handoff_evidence",
+    ]);
+    for (const e of entries)
+      if (e.type === "custom" && e.customType === "pi-handoff-work") {
+        work.set(e.data.id, e.data);
+        known.add(e.data.tool);
+      }
+    if ([...work.values()].some((d) => d.status !== "settled"))
+      throw new Error("Delegated work has not settled");
+    for (const e of entries)
+      if (
+        e.type === "message" &&
+        e.message.role === "assistant" &&
+        Array.isArray(e.message.content)
+      )
+        for (const c of e.message.content)
+          if (c.type === "toolCall" && !known.has(c.name))
+            throw new Error(
+              "Unknown delegated-work state; extension must report settlement",
+            );
+  };
+  pi.on("input", () => {
+    inputEpoch++;
+    if (recoveryBlocked) {
+      report("Repair Handoff state before submitting new work");
+      return { action: "handled" };
+    }
+  });
+  pi.on("session_before_compact", async (event, ctx) => {
+    let count = 0;
+    for (const e of ctx.sessionManager.getBranch())
+      if (e.type === "compaction") {
+        if ((e.details as any)?.plugin === "pi-handoff") count = 0;
+        else if (!e.fromHook) count++;
+      }
+    if (count < 3) return;
+    try {
+      if (recoveryBlocked) throw new Error("Handoff recovery required");
+      assertSettled(ctx.sessionManager.getBranch());
+      const epoch = inputEpoch,
+        leaf = ctx.sessionManager.getLeafId(),
+        model = ctx.model,
+        tools = JSON.stringify(pi.getActiveTools());
+      if (ctx.hasPendingMessages())
+        throw new Error("New input is waiting; Handoff deferred");
+      if (!ctx.model) throw new Error("Selected model unavailable");
+      const history = historyFingerprint(ctx);
+      const project = projectSnapshot(ctx.cwd);
+      const originals = [...sources(event.branchEntries), ...project.sources];
+      const selection = selectSources(
+        originals,
+        Math.min(
+          94000,
+          ctx.model.contextWindow - bytes(synthesisPrompt) - 12000,
+        ),
+      );
+      const input = JSON.stringify({
+        coverage: selection.coverage,
+        sources: selection.selected,
+        project: {
+          revision: project.revision,
+          observedAt: project.observedAt,
+          verification: project.verification,
+        },
+      });
+      if (
+        bytes(input) > 98304 ||
+        bytes(input) + bytes(synthesisPrompt) + 8192 > ctx.model.contextWindow
+      )
+        throw new Error("Original-source coverage exceeds preparation budget");
+      const signal = AbortSignal.any([
+        event.signal,
+        AbortSignal.timeout(30000),
+      ]);
+      const response = await ctx.modelRegistry
+        .streamSimple(
+          ctx.model,
+          {
+            systemPrompt: synthesisPrompt,
+            messages: [{ role: "user", content: input, timestamp: Date.now() }],
+          },
+          { maxTokens: 4096, signal },
+        )
+        .result();
+      if (response.stopReason !== "stop")
+        throw new Error("Incomplete synthesis");
+      const state = validate(
+        JSON.parse(
+          response.content
+            .filter((c) => c.type === "text")
+            .map((c) => c.text)
+            .join(""),
+        ),
+        originals,
+      );
+      signal.throwIfAborted();
+      assertSettled(ctx.sessionManager.getBranch());
+      if (
+        inputEpoch !== epoch ||
+        ctx.hasPendingMessages() ||
+        ctx.sessionManager.getLeafId() !== leaf ||
+        ctx.model !== model ||
+        JSON.stringify(pi.getActiveTools()) !== tools
+      )
+        throw new Error(
+          "Conversation changed during Handoff; pending input retained",
+        );
+      if (historyFingerprint(ctx) !== history)
+        throw new Error("Original history changed during Handoff");
+      if (projectSnapshot(ctx.cwd).fingerprint !== project.fingerprint)
+        throw new Error("Project changed during Handoff");
+
+      const summary = JSON.stringify({
+        recovery:
+          "Use handoff_evidence search for exact lexical details missing here; read verified anchors. Original history remains authoritative.",
+        handoff: randomUUID(),
+        state,
+        provenance:
+          "Quotes verified; claim meanings remain model interpretations.",
+        evidence: evidenceIndex(
+          originals,
+          ctx.sessionManager.getSessionId(),
+          state.claims,
+        ),
+      });
+      const cut = event.branchEntries.findIndex(
+        (e) => e.id === event.preparation.firstKeptEntryId,
+      );
+      if (cut < 0) throw new Error("Retained context cut point is unavailable");
+      const retained = event.branchEntries
+        .slice(cut)
+        .filter((e) => e.type === "message");
+      const schemas = pi
+        .getAllTools()
+        .filter((t) => pi.getActiveTools().includes(t.name));
+      const requestUpperEstimate =
+        bytes(summary) +
+        bytes(ctx.getSystemPrompt()) +
+        bytes(retained) +
+        bytes(schemas) +
+        8192;
+      if (requestUpperEstimate > ctx.model.contextWindow)
+        throw new Error("Replacement cannot preserve request/output headroom");
+      if (bytes(summary) > 24576)
+        throw new Error("Installed context exceeds 24 KiB budget");
+      save(ctx, {
+        version: 1,
+        session: ctx.sessionManager.getSessionId(),
+        summaryHash: digest(summary),
+        phase: "prepared",
+        continuation: "none",
+      });
+      return {
+        compaction: {
+          summary,
+          firstKeptEntryId: event.preparation.firstKeptEntryId,
+          tokensBefore: event.preparation.tokensBefore,
+          details: { plugin: "pi-handoff", version: 1, state },
+        },
+      };
+    } catch (error) {
+      report(error);
+      return { cancel: true };
+    }
+  });
+  pi.on("session_compact_failed", (event, ctx) => {
+    if (event.fromExtension && !event.aborted) {
+      recoveryBlocked = true;
+      unsafePersistence = true;
+      ctx.abort();
+      report(
+        "Native context persistence failed; restart and inspect recovery state before executing work",
+      );
+    }
+  });
+  pi.on("session_compact", (event, ctx) => {
+    const d = event.compactionEntry.details as any;
+    if (d?.plugin !== "pi-handoff") return;
+    try {
+      const journal = load(ctx);
+      if (
+        !journal ||
+        journal.summaryHash !== digest(event.compactionEntry.summary)
+      )
+        throw new Error("Uncertain Handoff commit");
+      confirmCommit(ctx, journal.summaryHash);
+      const active = d.state.status === "active" && event.reason !== "manual";
+      save(ctx, {
+        ...journal,
+        phase: "installed",
+        continuation: active ? "claimed" : "none",
+      });
+      if (
+        active &&
+        !event.willRetry &&
+        !ctx.hasPendingMessages() &&
+        !ctx.signal?.aborted
+      )
+        pendingContinuation = {
+          epoch: inputEpoch,
+          nextAction: d.state.nextAction,
+        };
+      if (!active && event.willRetry) ctx.abort();
+      if (d.state.status === "uncertain")
+        report(
+          "Task state is unresolved. Inspect the attributed uncertainty before continuing.",
+        );
+    } catch (error) {
+      recoveryBlocked = true;
+      ctx.abort();
+      report(error);
+    }
+  });
+}

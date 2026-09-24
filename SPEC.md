@@ -1,6 +1,6 @@
 # Pi Handoff Plugin
 
-Revision 2 — 2026-09-24. Status: ready for new implementation; not implemented.
+Revision 2 — 2026-09-24. Status: implemented on the implementation branch; see docs/plugin-acceptance.md for bounded engineering evidence and remaining semantic limits.
 This specification supersedes revision 1's adaptation/import development plan.
 Tracking: [Issue #1](http://192.168.100.1:3000/awangs/Context-handoff/issues/1) (`ready-for-agent`).
 

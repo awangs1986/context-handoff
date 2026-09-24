@@ -2,25 +2,47 @@
   "name": "context-handoff",
   "version": "0.1.0",
   "private": true,
-  "description": "Attributed handoff packets and selective context-fold adaptation design",
+  "description": "Pi plugin: attributed same-conversation Handoff at the fourth compaction boundary",
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
   },
   "exports": {
     ".": {
-      "types": "./dist/src/context/handoff.d.ts",
-      "import": "./dist/src/context/handoff.js"
+      "types": "./dist/src/plugin/extension.d.ts",
+      "import": "./dist/src/plugin/extension.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test",
+    "test:plugin": "vitest run test/pi-plugin.test.ts"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@types/node": "22.19.19",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "typebox": "1.3.7"
+  },
+  "license": "UNLICENSED",
+  "pi": {
+    "extensions": [
+      "./src/plugin/extension.ts"
+    ]
+  },
+  "files": [
+    "src/plugin/",
+    "dist/src/plugin/",
+    "README.md",
+    "SPEC.md",
+    "docs/plugin-acceptance.md",
+    "docs/plugin-design.md"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1"
   }
 }
