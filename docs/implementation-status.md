@@ -1,3 +1,6 @@
+> Historical import only. The owner restarted the project as a new Pi plugin.
+> This document does not describe implementation progress against SPEC revision 2.
+
 # Imported implementation and gaps
 
 Date: 2026-09-24. Source: Coffee

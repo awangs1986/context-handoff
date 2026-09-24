@@ -13,8 +13,8 @@ model-generated account. Information selection makes this lossy.
 _Avoid_: folding, Handoff
 
 **Handoff**:
-Preparing attributed current-task material for a successor session to continue
-the same authorized work.
+Preparing and installing attributed current-task context so the agent can
+continue the same authorized work within one visible Conversation.
 _Avoid_: context-fold, generic memory
 
 **Task State**:
@@ -28,10 +28,11 @@ that can be recovered and checked.
 _Avoid_: proof of semantic correctness
 
 **Conversation**:
-The stable user-facing task, retaining its workspace and history across native
-session segments.
+The stable user-facing task, retaining its Workspace and history across
+internal context replacements.
 _Avoid_: individual model request
 
 **Session Segment**:
-A native Pi session contributing to one Conversation before or after a Handoff.
+A native Pi session contributing to one Conversation if the implementation
+uses internal session replacement.
 _Avoid_: new task, new checkout

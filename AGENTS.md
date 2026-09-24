@@ -5,6 +5,8 @@ Use Chinese for owner discussion and English for maintained documentation.
 
 - SPEC.md is the behavioral authority for this repository. Separate accepted
   direction, proposed engineering choices, implemented behavior and evidence.
+- Treat SPEC revision 2 as a fresh plugin contract. Imported Coffee code/tests are historical reference only; they are not an implementation baseline.
+- The project issue tracker is Gitea `awangs/Context-handoff`; use the `ready-for-agent` label for this specified work.
 - Keep Pi core unmodified. Folding, native summary compaction and Handoff are
   separate mechanisms; Coffee P7 is a Host rollover implementation.
 - Keep the integration reference pinned; do not silently edit snapshot files.

@@ -1,51 +1,32 @@
-# Context Handoff
+# Pi Handoff Plugin
 
-Selective context folding and attributed task handoff for Pi/Coffee.
+A new Pi plugin for automatic, invisible task Handoff after three successful
+native summary compactions. The next compaction boundary performs Handoff and
+continues authorized work inside the same visible Conversation.
 
-The current delivery contains the existing Coffee handoff packet/resolver code,
-its four original tests, and a pinned snapshot of Coffee's Host integration.
-The context-fold mechanisms in [SPEC.md](SPEC.md) are planned work, not implemented
-features. This is not a fork of context-fold and is not yet an installable Pi extension.
+**Status: specification ready; new plugin not implemented.**
 
-## Read first
+## Project entry points
 
-- [SPEC.md](SPEC.md): agreed direction, mechanisms to learn, limitations and delivery gates.
-- [CONTEXT.md](CONTEXT.md): domain terms.
-- [Implementation status](docs/implementation-status.md): current code and known gaps.
-- [Coffee integration](integrations/pi-coffee/README.md): Host-dependent P7 sources.
-- [Provenance](provenance.json): original revision and hashes for every imported file.
+- [SPEC.md](SPEC.md): revision 2, the authoritative new-plugin specification.
+- [CONTEXT.md](CONTEXT.md): domain vocabulary.
+- [Research](docs/billion-context-task-state-research.md): source-based comparison with context-fold.
+- [Implementation Issue #1](http://192.168.100.1:3000/awangs/Context-handoff/issues/1): `ready-for-agent`, scope and acceptance.
+- [Historical import status](docs/implementation-status.md): earlier Coffee code and limitations.
 
-## Build and check
+The source and integration trees currently contain the earlier Coffee import.
+They are historical reference material, not a partially completed implementation
+of the new specification. The owner requested a fresh design. In particular, the
+old idle successor does not satisfy automatic continuation, and Coffee Host is
+not required as the new architecture.
 
-Requires Node >= 22.19.0, npm and Git on PATH.
+## Historical code checks
 
-```sh
-npm ci
-npm run check
-```
+Node >= 22.19.0, npm and Git are required. `npm ci` followed by `npm run check`
+builds the old imported packet/resolver and runs its four synthetic tests only.
+It does not validate the new plugin, run the Coffee integration snapshot, or call
+a model. [Import verification](docs/import-verification.md) records that limited
+result; [provenance.json](provenance.json) records the original source hashes.
 
-The check builds the packet/resolver and runs four existing synthetic tests. It
-does not run Coffee Host integration tests, start a Pi session, contact a model,
-or deploy anything. The integration reference is deliberately outside the build.
-
-The library exports `prepareHandoff`, `readHandoff` and
-`resolveHandoffEvidence`. Callers supply their own bounded synthesis function
-and Conversation scope. Preparation requires a committed Git checkout and a
-separate existing data root; it is disabled unless explicitly enabled.
-
-The existing recovery CLI is available after build at
-`dist/src/context/handoff-cli.js`. It requires `PI_COFFEE_ROOT_SESSION` and
-`PI_COFFEE_DATA_ROOT`, runs from the original checkout, and accepts packet ID,
-anchor ID, optional byte offset and optional length (maximum 4096 bytes).
-
-## Status and ownership
-
-Source baseline: Coffee `03ba7ea83e49cf94fab8a2ed317863b0f27be2ad`.
-Coffee does not yet consume this repository as a dependency. Its current runtime
-and deployment remain independently controlled. See the [import record](docs/import-verification.md)
-for checks performed on this extraction, separately from historical Coffee evidence.
-
-No license grant for Coffee-derived code is invented by this import; the source
-repository had no top-level LICENSE at the pinned revision. Owner distribution
-licensing remains to be selected. Upstream context-fold code has not been copied;
-future source reuse must retain its MIT notice and record provenance.
+No new plugin distribution license is selected here. Future copied/adapted
+third-party code must preserve its original license and provenance.
