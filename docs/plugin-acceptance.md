@@ -232,3 +232,111 @@ The prior final-version live failure remains recorded above.
 Final follow-up verification: `npm run check` passed the TypeScript build and
 **41 tests in 2 files** (69.74 seconds): 37 Pi conversation cases and 4 unchanged
 historical cases. `git diff --check` passed.
+
+## Paired semantic evaluation protocol
+
+The next evaluation uses two predeclared synthetic cases in
+`test/fixtures/paired-evaluation.json`: an owner correction with a labeled UTF-8
+identifier, and a changed revision with a conflicting quoted suggestion. Each
+case runs twice for each arm. Both arms use the same model, high reasoning,
+tools, task text, compactable checkpoint format and local context settings.
+The native arm keeps the evidence tool and sets the Handoff threshold above the
+four measured compactions; the Handoff arm uses the default threshold of three.
+No user message is added between the fourth compaction and the first score.
+
+The first score checks actual outgoing requests and Pi entries: three initial
+automatic native compactions, the fourth boundary type, autonomous continuation,
+installed state if present, final exact fields, source search/read timing relative
+to the fourth boundary, duplicated tool calls, wall time and provider-reported
+tokens. A structured state can fail even when a later answer is correct, because
+that state must guide other possible continuations. Conversely, a sound state
+does not excuse a wrong final answer. The scorer records the first failing stage.
+
+After preserving that no-prompt result, reopen each original session and send
+the **same fifth user message** to both arms. Automatic compaction is disabled
+during this follow-up so the comparison focuses on the retained context. The
+follow-up score is reported separately; it does not retroactively turn a failed
+autonomous result into a pass. Saved request bodies are forwarded unchanged,
+with no proxy editing of reasoning level or usage. Raw traces and credentials
+remain outside Git. Token counts are a cost proxy; actual billed currency is
+unknown without the provider's verified price and billing data.
+
+`scripts/evaluate-paired.mjs`, `scripts/evaluate-followup.mjs`,
+`scripts/score-evaluation.mjs`, `scripts/rescore-paired.mjs` and
+`scripts/aggregate-paired.mjs` implement this protocol. Rescoring all saved raw
+traces with one scorer version avoids mixed interpretations if a scoring mistake
+is found during the pilot. The aggregate includes every predeclared run, including
+missing results and failures.
+
+### Completed paired pilot (2026-09-25)
+
+Model: `gemini-3.8-flash` through the owner's NewAPI endpoint, with `high` on
+every captured model request. Handoff synthesis requested 16384 output tokens.
+The eight predeclared runs were completed (two scenarios × two repetitions × two
+arms), then the same fifth prompt was sent to each saved conversation. The proxy
+forwarded each captured request body unchanged. Four user messages belong to
+the autonomous phase, five to the prompted phase. An intentionally low local
+reserve threshold exercised real automatic Pi compaction without filling a
+production-sized context. The raw run is `paired-eval-01` outside Git.
+
+| Scenario / repeat | Native without fifth prompt | Handoff without fifth prompt | Native after common prompt | Handoff after common prompt |
+| --- | --- | --- | --- | --- |
+| Correction / 1 | No automatic resume | Pass: 9/9 fields and search → read | Provider `response_format_error`; no usable output | Pass; repeated reads added cost |
+| Correction / 2 | No automatic resume | Pass: 9/9 fields and search → read | 9/9 fields, but no required read after search | Pass |
+| Revision / 1 | No automatic resume | 9/9 fields; state correct, execution read happened before the required search | Pass: 9/9 fields and search → read | 9/9 fields; procedural order remained wrong |
+| Revision / 2 | No automatic resume | Synthesis ended at output length; no Handoff committed, old context later produced 9/9 fields | Provider `response_format_error`; no usable output | 9/9 fields; no committed Handoff or valid post-boundary recovery |
+
+The scorer initially matched only the step's narrative text for the search
+identifier. A valid step used a generic text and put the exact identifier in its
+quoted authorization. All eight raw traces were rescored under the corrected
+rule; the earlier score is preserved in `score.json` and the consistent result
+in `score-rescored.json`. A second scorer correction distinguished the final
+run's real synthesis `length` stop from a boundary that never triggered. It
+requested 16384 tokens and returned 16308 completion tokens in 65.316 seconds.
+The failed Handoff conservatively cancelled compaction rather than silently
+falling back to native. These are methodology corrections, not product fixes.
+
+Autonomous strict pass rates: native **0/4**, Handoff **2/4**. Native's four fourth
+compactions completed, but Pi made no next agent request without a fifth user
+message. Handoff's three installed states all had the correct exact identifier,
+a pending post-Handoff search step, and a matching next action. Two of those
+continued correctly; one violated search/read order after installation. A fourth
+state was never installed because synthesis was truncated. All four Handoff arm
+final files had 9/9 expected fields, including the one completed on the retained
+old context after failed Handoff. That field count alone is not a Handoff pass.
+
+Across the no-prompt phase, native used a mean **141.64 s**, **11** model requests
+and **53,291** reported input+output tokens per run. Handoff used **233.65 s**,
+**22.75** requests and **202,703** tokens per run (about **3.8×** the reported
+tokens). Handoff had one duplicate exact tool call across four runs; native had
+none because it did not continue. Provider usage is a cost proxy. Verified USD
+prices and billed amounts are unavailable, so no currency saving is claimed.
+
+After the identical fifth prompt, Handoff passed **2/4** and used **706,167**
+additional reported tokens across four runs; its added duplicate calls totaled
+**17**. Native passed **1/4** on first attempts and used **303,339** additional
+reported tokens, but two of those four requests returned HTTP 200 containing
+an SSE `response_format_error` and no usage/final content. Therefore native's
+first-attempt mean token use and 4.5/9 mean correct fields are materially
+confounded by provider errors. Of the two usable native first attempts, both
+had 9/9 correct fields and one met the strict search → read requirement.
+
+The two provider-error sessions were replayed once from their pre-fifth-message
+states as a separately labeled sensitivity check. An initial replay with an
+uncorrected copied session `cwd` was invalid and excluded; its synthetic write
+was preserved separately and the original workspace was restored. In isolated
+replays with the correct session workspace, both native continuations passed
+strictly with 9/9 fields and search → read. These replacements do not alter the
+predeclared first-attempt rates. They indicate that native summaries retained
+enough facts for prompted recovery in these samples. All four native fourth
+summaries contained the tested identifier, corrected mode/limit, rejected
+approach and a lexical recovery cue; these presence checks do not prove complete
+semantic understanding.
+
+This pilot supports the same-session autonomous continuation capability in two
+of four Handoff runs and identifies concrete failure stages: post-installation
+execution order, synthesis output truncation, and provider response formatting.
+It does **not** establish a general semantic fidelity advantage over native
+compaction. The sample is small, scenario values were given explicitly, the
+native arm required a fifth prompt to resume, and high-cost repeated evidence
+reads were observed. No production activation or model change followed.

@@ -75,3 +75,13 @@ Optional real-model acceptance from a source checkout (never run by `npm test`):
 This makes paid requests, uses synthetic files and records raw synthetic requests
 outside Git. The script forwards requests unchanged and requires automatic
 compaction, autonomous continuation, exact task results and original recovery.
+
+For a paired comparison, run `scripts/evaluate-paired.mjs` for every scenario,
+repetition and arm listed in `test/fixtures/paired-evaluation.json`; then use
+`scripts/evaluate-followup.mjs` on each run directory for the common prompted
+continuation. `scripts/rescore-paired.mjs` and `scripts/aggregate-paired.mjs`
+produce one consistent metric summary from all saved runs. These scripts also
+require the same environment credentials and an artifact directory outside Git.
+`node scripts/run-paired.mjs /absolute/new/artifact/directory` runs the whole
+predeclared cohort in order, keeps failures and raw traces, and writes the
+aggregate. A new directory is required to prevent overwriting prior evidence.

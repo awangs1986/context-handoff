@@ -215,3 +215,26 @@ normalize to empty arrays for compatibility, not certified complete coverage.
 Malformed present records fail preparation and preserve the previous context.
 This follow-up implements the owner's first two steps only; it does not change the
 live evaluation oracle or claim a new real-model pass.
+
+### Evaluation of state and continuation
+
+Evaluate the installed Task State and the final user task separately. Check the
+effective exact identifier value, label/value separation, a pending post-Handoff
+search step, and consistency between the first pending step and next action.
+Locate every original recovery tool call relative to the fourth compaction entry.
+A search before that boundary does not satisfy a required search afterward;
+require a subsequent scoped read. Score final answer fields against independently
+specified literals. Report the first observed failure stage, field omissions,
+wrong present values and repeated tool calls separately. Keep all failed runs.
+
+For a paired comparison, predeclare scenarios and repetitions, run both policies
+with the same model, thinking level, context settings, tools and task text. The
+native arm keeps the evidence tool available but raises the Handoff cadence above
+the measured four boundaries. First measure autonomous continuation with exactly
+four user messages. Then resume the same saved sessions using an identical fifth
+user prompt in both arms to compare retained-context task fidelity separately.
+Report per-arm correct fields, post-boundary search/read, omissions, repeated calls,
+wall time and provider-reported token usage. If actual billed currency prices are
+unavailable, report them as unknown rather than converting tokens using an
+invented rate. Two scenarios and two repetitions are a pilot, not proof of a
+general superiority claim.
