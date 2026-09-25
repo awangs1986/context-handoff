@@ -34,7 +34,12 @@ npm pack
   after the third success. Manual successes count too.
 - Original user constraints/corrections are retained as source inputs. A small model state cites source IDs; the program binds hashes, timestamps, authority labels and supersession links. Original history and recorded project observations remain recoverable.
 - Exact-value records separate labels from values and retain quoted originals. Ordered steps preserve pending/completed/uncertain status, required timing and completion evidence. These checks do not prove complete semantic coverage.
-- `handoff_evidence` searches original active-branch history and reads verified ranges.
+- `handoff_evidence_search` and `handoff_evidence_read` separate original search
+  from verified reads; `handoff_evidence` remains compatible. Paged reads can
+  satisfy supported evidence prerequisites, including after restart.
+- Source-bound evidence ordering is reconstructed from committed branch history.
+  Latest user replacements can release old ordering through a quoted, persisted
+  `handoff_reconcile` receipt; unrelated new tasks remain usable.
 - Preparation, retrieval and continuation have explicit budgets and failure states.
   Third-party asynchronous tools require the documented settlement event.
 - Scripted-provider acceptance demonstrates orchestration and source integrity.
@@ -70,7 +75,10 @@ inherits Pi's current thinking strength, including `high`. Without budget flags,
 reasoning uses up to 16,384 output tokens / 120 seconds and thinking-off uses
 4,096 / 60 seconds. Model/context limits can reduce the output cap. A higher cap
 allows reasoning room; it does not enlarge the concise installed task state.
-Failures preserve previous context and report the specific reason, with no retries.
+Failed generation preserves previous context and reports the specific reason.
+There is no full-generation retry. A parsed but invalid state may receive one
+restricted field patch within the same deadline, followed by complete validation.
+See [repair and ordering limits](docs/plugin-design.md#bounded-state-repair-and-durable-evidence-ordering).
 
 Optional real-model acceptance from a source checkout (never run by `npm test`): set
 `PI_HANDOFF_EVAL_API_KEY`, `PI_HANDOFF_EVAL_BASE_URL`, and

@@ -1,9 +1,9 @@
 import { Type } from "typebox";
 import { readFileSync, statSync } from "node:fs";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { bytes, sources } from "./task-state.js";
 export function registerEvidence(pi: ExtensionAPI) {
-  pi.registerTool({
+  const evidenceTool = defineTool({
     name: "handoff_evidence",
     label: "Original evidence",
     description:
@@ -101,6 +101,30 @@ export function registerEvidence(pi: ExtensionAPI) {
       };
     },
   });
+  pi.registerTool(evidenceTool);
+  pi.registerTool({
+    name: "handoff_evidence_search",
+    label: "Search original evidence",
+    description: "Search original history by exact query. Returns verified anchors. To inspect a returned anchor, call handoff_evidence_read.",
+    parameters: Type.Object({
+      query: Type.String({ maxLength: 256 }),
+      cursor: Type.Optional(Type.Integer({ minimum: 0 })),
+    }),
+    execute: (id, p, signal, update, ctx) =>
+      evidenceTool.execute(id, { ...p, action: "search" }, signal, update, ctx),
+  });
+  pi.registerTool({
+    name: "handoff_evidence_read",
+    label: "Read original evidence",
+    description: "Read a verified original anchor returned by evidence search. This is the required next step after finding the source.",
+    parameters: Type.Object({
+      anchor: Type.String({ maxLength: 256 }),
+      start: Type.Optional(Type.Integer({ minimum: 0 })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })),
+    }),
+    execute: (id, p, signal, update, ctx) =>
+      evidenceTool.execute(id, { ...p, action: "read" }, signal, update, ctx),
+  });
   pi.on("context", (event) => {
     // Tool calls are intermediate reasoning steps, not evidence consumption.
     // Keep recent evidence together within this user turn so sources can be compared.
@@ -110,7 +134,7 @@ export function registerEvidence(pi: ExtensionAPI) {
     let budget = 32768;
     for (let i = event.messages.length - 1; i > lastUser; i--) {
       const message = event.messages[i];
-      if (message.role !== "toolResult" || message.toolName !== "handoff_evidence") continue;
+      if (message.role !== "toolResult" || !["handoff_evidence", "handoff_evidence_search", "handoff_evidence_read"].includes(message.toolName)) continue;
       const size = bytes(message.content);
       if (size <= budget) {
         retained.add(i);
@@ -119,7 +143,7 @@ export function registerEvidence(pi: ExtensionAPI) {
     }
     return {
       messages: event.messages.map((m: any, i) =>
-        m.role === "toolResult" && m.toolName === "handoff_evidence" && !retained.has(i)
+        m.role === "toolResult" && ["handoff_evidence", "handoff_evidence_search", "handoff_evidence_read"].includes(m.toolName) && !retained.has(i)
           ? {
               ...m,
               content: [{

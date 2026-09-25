@@ -43,3 +43,14 @@ Program-owned source identities, integrity hashes, observation timestamps and
 read-only project snapshots committed with a Handoff in native session history.
 Model Task State cites this evidence; historical observations are not current
 verification and reference integrity does not prove semantic entailment.
+
+
+**Evidence Order Obligation**:
+A supported pending search/read prerequisite derived from committed Task State.
+Its progress is reconstructed from successful active-branch tool observations.
+_Avoid_: universal action authorization, semantic correctness proof
+
+**Task Change Receipt**:
+A native session record binding a model-interpreted replacement of evidence
+ordering to a quote from the latest original user message and its hash.
+_Avoid_: mechanically verified user intent, permission to restart old work

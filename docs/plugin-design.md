@@ -53,8 +53,9 @@ loadout invalidate preparation before context installation.
 
 ## Original recovery
 
-The single model tool, `handoff_evidence`, offers exact lexical search and scoped
-UTF-8 byte reads over original admitted messages on the active branch. Anchors
+`handoff_evidence_search` and `handoff_evidence_read` offer action-specific schemas;
+the compatible `handoff_evidence` tool provides the same exact lexical search and
+scoped UTF-8 byte reads over original admitted messages on the active branch. Anchors
 contain session ID, entry ID and SHA-256 of the original message representation,
 including its media metadata. Reads compare the anchor with the persisted source.
 Foreign, missing, changed, out-of-branch and split-UTF-8 requests return explicit
@@ -191,7 +192,58 @@ into proof that a required later search already happened.
 
 The synthesis prompt requests these records and the installed recovery guidance
 instructs continuation to use exact values without their labels and follow pending
-steps in order. No extra model judge or runtime action interceptor is introduced.
+steps in order. The follow-up below adds bounded structural repair and a public
+tool-call order guard; neither proves semantic correctness.
 Empty legacy arrays do not establish completeness; all records share existing
 state, synthesis and installed-context size limits. Unknown completion remains
 uncertain and must not cause side-effect replay.
+
+
+## Bounded state repair and durable evidence ordering
+
+`state-repair.ts` admits one restricted patch after a parsed Task State fails
+validation. It preserves value/source/quote/action fields, rejects extra patch
+keys and repeated indexes, and runs the full validator again. Only authorized
+read-only searches completed before the required boundary can return to pending.
+An authorized combined two-marker search becomes separate pending actions.
+Recognized required searches omitted entirely from an active state stop
+preparation; the patch cannot invent a missing procedure. Recognition currently
+uses the documented English step forms and is not a universal language parser.
+
+The repair request inherits reasoning, has at most 8192 output tokens, shares the
+original AbortSignal/deadline and checks input/context headroom. Source selection
+remains bounded and preserves mandatory originals. Full synthesis retries remain
+zero. Runtime fault injection is absent; synthetic faults live in provider tests.
+
+`order-guard.ts` reconstructs requirements from the latest committed Handoff and
+successful original-history search/read results on the active branch for each
+public tool call. It does not execute historical calls. Failed results do not
+count. Consistent adjacent/overlapping byte ranges accumulate separately for each
+anchor, up to 32 KiB; disjoint sections never invent a contiguous exact value.
+A read missing a required literal receives a wider-range/paging hint. A completed
+recovery remains completed after restart, avoiding mandatory duplicate reads.
+
+The guard recognizes consecutive pending `Search handoff_evidence for MARKER`
+steps followed by an original-anchor read, all attributed to original user input.
+During automatic continuation, those obligations precede other tools. Once new
+user input arrives, unrelated work is allowed and recognized `Write <path>`
+deliverables remain protected for `write` and `edit` calls. This is not enforcement
+for arbitrary prose, shell writes, alternate path spellings or all possible tools.
+
+`handoff_reconcile` is a model tool for an explicit latest-user task replacement
+or cancellation. Its receipt records native Handoff/user IDs, the original user
+message hash, a literal quote and explanation. Old instruction quotes and
+assistant/tool content cannot substitute for latest-user provenance. Receipts
+are checked on branch replay and carried into later synthesis as superseded
+evidence-order sources; originals remain searchable. New native compactions do
+not erase that record. Completed original recovery is likewise recognized across
+later Handoffs. Synthesis receives `retiredEvidenceOrderSources` for completed or
+replaced one-time orders, while retaining original source content and other
+constraints. A stopped/done state does not trigger the missing-search
+check. Users do not need a special command or acknowledgement.
+
+The model still decides whether the quoted latest user text actually supersedes
+the old order. Source validation does not prove that semantic interpretation; a
+misapplied receipt could release an obligation incorrectly. The guard is scoped
+workflow reliability, not a security boundary. Branch history scanning adds work
+per tool call; large-history latency has not been benchmarked in this follow-up.

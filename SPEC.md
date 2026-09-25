@@ -110,7 +110,7 @@ claimed, and three compactions is a policy choice rather than a proven safe boun
 
 13. **Evidence ownership and ingress.** Preserve original admitted history and existing evidence stores. Handoff must not resurrect rejected search material, duplicate entire transcripts into a competing store, or bypass a host's ingress limits. Packet/evidence state belongs to the owning Conversation and stays out of repository commits and public logs. Treat preserved images and attachments honestly: retaining a file pointer does not prove its visual content was understood.
 
-14. **Bounded preparation.** Set explicit source-input, generated-state, index, retrieval, output-headroom, deadline and retry budgets before implementation acceptance. Use the selected model through supported provider interfaces when synthesis is necessary; deterministic checks validate references and metadata. Reject incomplete/failed generation rather than installing a partial context as complete. Report estimates distinctly from provider usage. Inherit Pi thinking strength through the public provider API. Defaults are 16,384 output tokens and 120 seconds with reasoning, or 4,096 tokens and 60 seconds with reasoning off. Output includes provider reasoning and is capped by model output capacity, half its context, and conservative source headroom. Explicit flags allow 1,024–65,536 output tokens and 100–300,000 ms deadlines. Cancellation remains immediate and generation retries remain zero. Output truncation, provider failure and deadline expiry must be distinguishable. These values are engineering choices, not proven safe bounds.
+14. **Bounded preparation.** Set explicit source-input, generated-state, index, retrieval, output-headroom, deadline and retry budgets before implementation acceptance. Use the selected model through supported provider interfaces when synthesis is necessary; deterministic checks validate references and metadata. Reject incomplete/failed generation rather than installing a partial context as complete. Report estimates distinctly from provider usage. Inherit Pi thinking strength through the public provider API. Defaults are 16,384 output tokens and 120 seconds with reasoning, or 4,096 tokens and 60 seconds with reasoning off. Output includes provider reasoning and is capped by model output capacity, half its context, and conservative source headroom. Explicit flags allow 1,024–65,536 output tokens and 100–300,000 ms deadlines. Cancellation remains immediate and full-generation retries remain zero; the restricted field-patch attempt below shares the original deadline. Output truncation, provider failure and deadline expiry must be distinguishable. These values are engineering choices, not proven safe bounds.
 
 15. **Safe transition.** Prepare an immutable snapshot, validate its lineage/resources, durably establish the replacement context and then continue. Settle active tools and delegated work first; unknown action status is not permission to replay. New input, cancellation or changed project state during preparation must be reconciled before commit. Preserve tool-call/result pairing and provider-specific constraints in every outgoing request.
 
@@ -212,9 +212,9 @@ Bounds: 16 exact values and 12 steps; 512-character values/actions, 1024-charact
 quotes, at most four completion references per step, all within the existing
 12 KiB state and 24 KiB installed-context budgets. Missing arrays on legacy states
 normalize to empty arrays for compatibility, not certified complete coverage.
-Malformed present records fail preparation and preserve the previous context.
-This follow-up implements the owner's first two steps only; it does not change the
-live evaluation oracle or claim a new real-model pass.
+Malformed records cannot be installed. The restricted field patch below may repair
+supported structure; failure preserves the previous context. Earlier evaluation
+outcomes remain historical evidence and are not reclassified by these changes.
 
 ### Evaluation of state and continuation
 
@@ -238,3 +238,42 @@ wall time and provider-reported token usage. If actual billed currency prices ar
 unavailable, report them as unknown rather than converting tokens using an
 invented rate. Two scenarios and two repetitions are a pilot, not proof of a
 general superiority claim.
+
+
+### Evaluation-driven reliability follow-up (2026-09-25)
+
+1. Expose separate original search/read tools with small action-specific schemas;
+   retain `handoff_evidence` compatibility and the same original-source store.
+2. Permit at most one model field-patch request after a parsed state fails
+   validation. It may change only exact-value label/separator or authorized step
+   phase/status. Preserve values, source IDs, quotes and actions; only a premature
+   read-only evidence search may return from completed to pending. Revalidate the
+   entire result. Truncation, provider failure and invalid JSON receive no retry.
+   The patch inherits reasoning, shares the preparation deadline, uses at most
+   8192 output tokens, and obeys the 96 KiB/context input budgets.
+3. Normalize the supported source-quoted two-marker search into two ordered
+   searches. Recognized explicit after-Handoff searches in an active task cannot
+   be silently omitted or satisfied by earlier results. This is bounded lexical
+   recognition, not general natural-language procedure verification.
+4. For the supported pending search → original read → write procedure, derive
+   obligations from the latest committed Handoff and replay successful branch
+   observations at each public tool call. Restart, new generic continuation and
+   branch selection must not forget them. Credit only searched original user
+   anchors with verified byte ranges containing the marker and source-bound exact
+   values. Accumulate consistent pages per anchor (32 KiB); gaps cannot fabricate
+   contiguous text. Completed recovery survives restart.
+5. New user input permits unrelated work while retaining prerequisites on the
+   recognized original write/edit paths. To replace that ordering, the model may
+   call `handoff_reconcile` with an exact latest-user quote and reason. Persist
+   Handoff ID, user entry ID/hash and quote, validate them on replay, and carry the
+   replacement into later synthesis. Completed one-time recovery likewise stays
+   completed across later Handoffs. Keep all originals available. No user
+   command, confirmation or new visible conversation is required. Stopped/done
+   task state must not revive an old search requirement.
+6. The guard is a workflow check for standardized step text, recognized markers
+   and paths, not a shell sandbox or complete side-effect authorization system.
+   After new input, other tools/path forms are outside this protection. A matching
+   latest-user quote proves provenance; deciding that it truly cancels/replaces
+   a requirement remains model interpretation. These changes do not prove
+   general fidelity superiority, semantic completeness or resistance to a model
+   deliberately misusing the reconciliation tool.

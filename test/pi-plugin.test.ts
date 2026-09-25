@@ -8,12 +8,14 @@ import {
   chmod,
   readFile,
   cp,
+  readdir,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { RpcClient } from "@earendil-works/pi-coding-agent";
 import { expect, it } from "vitest";
+import { scoreConflictProcedure } from "../scripts/score-conflict-procedure.mjs";
 
 async function fixture(extra?: string, packagePath?: string, flags: string[] = [], reasoning = false) {
   const root = await mkdtemp(join(tmpdir(), "pi-handoff-"));
@@ -33,6 +35,7 @@ async function fixture(extra?: string, packagePath?: string, flags: string[] = [
     fail: false,
     gate: undefined as undefined | (() => Promise<void>),
     synthesis: undefined as undefined | ((input: any) => any),
+    patch: undefined as undefined | ((input: any) => any),
   };
   const server = createServer(async (req, res) => {
     let body = "";
@@ -42,6 +45,7 @@ async function fixture(extra?: string, packagePath?: string, flags: string[] = [
     const synthesis = r.messages.some((m: any) =>
       String(m.content).startsWith("PI_HANDOFF_SYNTHESIS"),
     );
+    const repair = r.messages.some((m:any)=>String(m.content).startsWith("PI_HANDOFF_FIELD_PATCH"));
     if (control.overflow && !synthesis) {
       control.overflow = false;
       res.writeHead(400);
@@ -58,10 +62,10 @@ async function fixture(extra?: string, packagePath?: string, flags: string[] = [
       return;
     }
     if (synthesis) await control.gate?.();
-    const input = synthesis
+    const input = synthesis || repair
       ? JSON.parse(r.messages.find((m: any) => m.role === "user").content)
       : undefined;
-    const content = synthesis
+    const content = repair ? JSON.stringify(control.patch?.(input) ?? {}) : synthesis
       ? JSON.stringify(
           control.synthesis
             ? control.synthesis(input)
@@ -102,8 +106,8 @@ async function fixture(extra?: string, packagePath?: string, flags: string[] = [
         )
       : "Checkpoint. " +
         "Keep the authorized task constraints. ".repeat(control.padding);
-    const tool = !synthesis ? control.tools.shift() : undefined;
-    const pressure = control.pressure && !synthesis && !tool;
+    const tool = !synthesis && !repair ? control.tools.shift() : undefined;
+    const pressure = control.pressure && !synthesis && !repair && !tool;
     if (pressure) control.pressure = false;
     res.writeHead(200, { "content-type": "text/event-stream" });
     for (const chunk of [
@@ -1486,4 +1490,358 @@ it("requires successful tool evidence for completed steps and retains ordered un
     expect(state.steps[0].completion[0].hash).toMatch(/^[a-f0-9]{64}$/);
     expect(state.nextAction).toBe("Write answer.json");
   } finally {await c.stop(); await f.cleanup();}
+},60000);
+
+it("holds an authorized answer write until post-Handoff search and verified original read", async () => {
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]), c = f.client();
+  const instruction = "After the fourth context maintenance boundary, search handoff_evidence for GUARD_42, read its original user anchor, then write answer.json. Keep protected.txt intact.";
+  let anchor = "";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text.includes("GUARD_42"));
+    const actions = ["Search handoff_evidence for GUARD_42", "Read its original user anchor", "Write answer.json"];
+    f.control.tools.push(
+      {name:"write",args:{path:"answer.json",content:'{"answer":"premature"}'}},
+      {name:"handoff_evidence_search",args:{query:"GUARD_42"}},
+      {name:"handoff_evidence_read",args:{anchor:"wrong/source/hash",start:0,limit:4096}},
+      {name:"handoff_evidence_read",args:{anchor,start:0,limit:4096}},
+      {name:"write",args:{path:"answer.json",content:'{"answer":"GUARD_42"}'}},
+    );
+    return {status:"active",nextAction:actions[0],claims:[
+      {id:"next",kind:"nextAction",text:actions[0],refs:[owner.id]}
+    ],exactValues:[],steps:actions.map((text,index)=>({id:`s${index+1}`,text,
+      phase:"after_handoff",status:"pending",authorization:{source:owner.id,
+        quote:index===0?"search handoff_evidence for GUARD_42":index===1?"read its original user anchor":"write answer.json"},completion:[]}))};
+  };
+  try {
+    await c.start();
+    await c.promptAndWait(instruction, undefined, 15000);
+    const owner = (await c.getEntries()).entries.find((e:any) => e.type === "message" && e.message.role === "user");
+    const hash = createHash("sha256").update(JSON.stringify(owner.message)).digest("hex");
+    anchor = `${(await c.getState()).sessionId}/${owner.id}/${hash}`;
+    await c.compact();
+    f.control.pressure = true;
+    await c.promptAndWait("Continue the authorized task after Handoff.", undefined, 30000);
+    const entries = (await c.getEntries()).entries;
+    expect(handoffs(entries)).toHaveLength(1);
+    expect(await readFile(join(f.cwd,"answer.json"),"utf8")).toBe('{"answer":"GUARD_42"}');
+    const results = entries.filter((e:any)=>e.type==="message" && e.message.role==="toolResult");
+    expect(results.filter((e:any)=>e.message.isError && JSON.stringify(e.message.content).includes("Handoff requires"))).toHaveLength(2);
+    expect(results.some((e:any)=>e.message.toolName==="handoff_evidence_read" && !e.message.isError)).toBe(true);
+  } finally { await c.stop(); await f.cleanup(); }
+}, 60000);
+
+it("does not install a Task State that omits an explicitly required post-Handoff search", async () => {
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]), c = f.client();
+  const instruction = "After the upcoming Handoff, search handoff_evidence for OMIT_7, read its original user anchor, then write answer.json.";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text.includes("OMIT_7"));
+    const nextAction = "Read original user anchor for OMIT_7";
+    return {status:"active",nextAction,claims:[
+      {id:"next",kind:"nextAction",text:nextAction,refs:[owner.id]}
+    ],exactValues:[],steps:[
+      {id:"read",text:nextAction,phase:"after_handoff",status:"pending",
+        authorization:{source:owner.id,quote:"read its original user anchor"},completion:[]},
+      {id:"write",text:"Write answer.json",phase:"after_handoff",status:"pending",
+        authorization:{source:owner.id,quote:"write answer.json"},completion:[]},
+    ]};
+  };
+  try {
+    await c.start();
+    await c.promptAndWait(instruction, undefined, 15000);
+    await c.compact();
+    f.control.pressure = true;
+    await c.promptAndWait("Continue the authorized task.", undefined, 30000);
+    const entries = (await c.getEntries()).entries;
+    expect(handoffs(entries)).toHaveLength(0);
+    expect(JSON.stringify(entries)).toContain("post-Handoff evidence search");
+  } finally { await c.stop(); await f.cleanup(); }
+}, 60000);
+
+it("installs one evidence search per marker when the pending action combines two searches", async () => {
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]), c = f.client();
+  const instruction = "After the upcoming Handoff, search handoff_evidence for ATOM_A and ATOM_B, read both original user anchors, then write answer.json.";
+  const combined = "Search handoff_evidence for ATOM_A and ATOM_B";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text.includes("ATOM_A"));
+    return {status:"active",nextAction:combined,claims:[
+      {id:"next",kind:"nextAction",text:combined,refs:[owner.id]}
+    ],exactValues:[],steps:[
+      {id:"search",text:combined,phase:"after_handoff",status:"pending",
+        authorization:{source:owner.id,quote:"search handoff_evidence for ATOM_A and ATOM_B"},completion:[]},
+      {id:"read",text:"Read both original user anchors",phase:"after_handoff",status:"pending",
+        authorization:{source:owner.id,quote:"read both original user anchors"},completion:[]},
+      {id:"write",text:"Write answer.json",phase:"after_handoff",status:"pending",
+        authorization:{source:owner.id,quote:"write answer.json"},completion:[]},
+    ]};
+  };
+  try {
+    await c.start();
+    await c.promptAndWait(instruction, undefined, 15000);
+    await c.compact();
+    f.control.pressure = true;
+    await c.promptAndWait("Continue the authorized task.", undefined, 30000);
+    const state = JSON.parse(handoffs((await c.getEntries()).entries)[0].summary).state;
+    expect(state.nextAction).toBe("Search handoff_evidence for ATOM_A");
+    expect(state.steps.slice(0,2).map((step:any)=>step.text)).toEqual([
+      "Search handoff_evidence for ATOM_A", "Search handoff_evidence for ATOM_B",
+    ]);
+    expect(state.steps.slice(0,2).every((step:any)=>step.phase==="after_handoff" &&
+      step.status==="pending" && step.authorization.source)).toBe(true);
+  } finally { await c.stop(); await f.cleanup(); }
+}, 60000);
+
+it("requires fresh searches and verified reads of both originals before the first answer write", async () => {
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "3"]), c = f.client();
+  const markers = ["GUARD_A_42", "GUARD_B_42"];
+  const instruction = `After the upcoming Handoff, search handoff_evidence for ${markers[0]} and ${markers[1]}, read both original user anchors, then write answer.json.`;
+  let anchorA = "", anchorB = "";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text.includes("upcoming Handoff"));
+    const sourceA = input.sources.find((s:any) => s.role === "user" && s.text.includes("SOURCE A GUARD_A_42"));
+    const actions = [
+      `Search handoff_evidence for ${markers[0]}`,
+      `Search handoff_evidence for ${markers[1]}`,
+      "Read both original user anchors", "Write answer.json",
+    ];
+    f.control.tools.push(
+      {name:"handoff_evidence_read",args:{anchor:anchorA,start:0,limit:4096}},
+      {name:"handoff_evidence_search",args:{query:markers[1]}},
+      {name:"handoff_evidence_read",args:{anchor:anchorB,start:0,limit:4096}},
+      {name:"write",args:{path:"answer.json",content:'{"status":"premature"}'}},
+      {name:"handoff_evidence_search",args:{query:markers[0]}},
+      {name:"handoff_evidence_read",args:{anchor:anchorA,start:0,limit:1024}},
+      {name:"write",args:{path:"answer.json",content:'{"status":"still premature"}'}},
+      {name:"handoff_evidence_read",args:{anchor:anchorA,start:0,limit:4096}},
+      {name:"write",args:{path:"answer.json",content:'{"status":"uncertain"}'}},
+    );
+    return {status:"active",nextAction:actions[0],claims:[
+      {id:"next",kind:"nextAction",text:actions[0],refs:[owner.id]}
+    ],exactValues:[{field:"claim_a",label:"Claim",separator:": ",value:"VALUE_A",
+      source:sourceA.id,quote:"Claim: VALUE_A"}],steps:actions.map((text,index)=>({id:`s${index+1}`,text,
+      phase:"after_handoff",status:"pending",authorization:{source:owner.id,
+        quote:index<2?`search handoff_evidence for ${markers[0]} and ${markers[1]}`:
+          index===2?"read both original user anchors":"write answer.json"},completion:[]}))};
+  };
+  try {
+    await c.start();
+    await c.promptAndWait(instruction, undefined, 15000);
+    await c.promptAndWait(`SOURCE A ${markers[0]} ${"padding ".repeat(220)}Claim: VALUE_A`, undefined, 15000);
+    await c.promptAndWait(`SOURCE B ${markers[1]} VALUE_B`, undefined, 15000);
+    const entriesBefore = (await c.getEntries()).entries;
+    const anchorFor = (needle:string) => {
+      const source = entriesBefore.find((e:any)=>e.type==="message" &&
+        e.message.role==="user" && JSON.stringify(e.message.content).includes(needle));
+      const hash = createHash("sha256").update(JSON.stringify(source.message)).digest("hex");
+      return `${f.id}/${source.id}/${hash}`;
+    };
+    anchorA = anchorFor("SOURCE A"); anchorB = anchorFor("SOURCE B");
+    await three(c);
+    f.control.tools.push({name:"handoff_evidence_search",args:{query:markers[0]}});
+    f.control.pressure = true;
+    await c.promptAndWait("Release and complete the authorized task.", undefined, 30000);
+    const entries = (await c.getEntries()).entries;
+    expect(handoffs(entries)).toHaveLength(1);
+    expect(await readFile(join(f.cwd,"answer.json"),"utf8")).toBe('{"status":"uncertain"}');
+    const score = scoreConflictProcedure(entries,markers,["VALUE_A","VALUE_B"]);
+    expect(score.valid).toBe(true);
+    expect(score.blockedAnswerAttempts).toBe(2);
+    expect(entries.filter((e:any)=>e.type==="message" && e.message.role==="toolResult" &&
+      e.message.isError && JSON.stringify(e.message.content).includes("Handoff requires"))).toHaveLength(3);
+    expect(entries.some((e:any)=>e.type==="message" && e.message.role==="toolResult" &&
+      e.message.isError && JSON.stringify(e.message.content).includes("increase limit to 4096"))).toBe(true);
+  } finally { await c.stop(); await f.cleanup(); }
+}, 60000);
+
+it("blocks a premature answer write after reopening an unfinished Handoff", async () => {
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]);
+  const instruction = "After the upcoming Handoff, search handoff_evidence for RESTART_42, read its original user anchor, then write answer.json.";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text === instruction);
+    const actions = ["Search handoff_evidence for RESTART_42",
+      "Read its original user anchor", "Write answer.json"];
+    return {status:"active",nextAction:actions[0],claims:[
+      {id:"next",kind:"nextAction",text:actions[0],refs:[owner.id]}
+    ],exactValues:[],steps:actions.map((text,index)=>({id:`s${index+1}`,text,
+      phase:"after_handoff",status:"pending",authorization:{source:owner.id,
+        quote:index===0?"search handoff_evidence for RESTART_42":
+          index===1?"read its original user anchor":"write answer.json"},completion:[]}))};
+  };
+  const first = f.client();
+  try {
+    await first.start();
+    await first.promptAndWait(instruction,undefined,15000);
+    await first.compact();
+    await first.promptAndWait("Keep the authorized task pending through the next boundary.",undefined,15000);
+    await first.compact();
+    expect(handoffs((await first.getEntries()).entries)).toHaveLength(1);
+    await first.stop();
+    const file = (await readdir(join(f.root,"sessions"))).find(name => name.endsWith(".jsonl"));
+    expect(file).toBeDefined();
+    const resumed = f.client(join(f.root,"sessions",file!));
+    try {
+      await resumed.start();
+      f.control.tools.push({name:"write",args:{path:"answer.json",content:'{"status":"premature"}'}});
+      await resumed.promptAndWait("Continue the unfinished authorized task.",undefined,15000);
+      await expect(readFile(join(f.cwd,"answer.json"),"utf8")).rejects.toMatchObject({code:"ENOENT"});
+      expect(JSON.stringify((await resumed.getEntries()).entries)).toContain("Handoff requires");
+      f.control.tools.push({name:"write",args:{path:"fresh.json",content:'{"newTask":true}'}});
+      await resumed.promptAndWait("Cancel the old answer task. Create fresh.json for this new task only.",undefined,15000);
+      expect(await readFile(join(f.cwd,"fresh.json"),"utf8")).toBe('{"newTask":true}');
+      await expect(readFile(join(f.cwd,"answer.json"),"utf8")).rejects.toMatchObject({code:"ENOENT"});
+      const correction = "Cancel the previous evidence order. Replace answer.json with the new authorized content.";
+      f.control.tools.push(
+        {name:"handoff_reconcile",args:{quote:instruction,reason:"Old instruction cannot authorize a new override"}},
+        {name:"write",args:{path:"answer.json",content:"must stay blocked"}},
+        {name:"handoff_reconcile",args:{quote:correction,reason:"The latest user explicitly replaced the old evidence order"}},
+        {name:"write",args:{path:"answer.json",content:"new authorized content"}},
+      );
+      await resumed.promptAndWait(correction,undefined,15000);
+      expect(await readFile(join(f.cwd,"answer.json"),"utf8")).toBe("new authorized content");
+      const results = (await resumed.getEntries()).entries.filter((e:any)=>e.type==="message" && e.message.role==="toolResult");
+      expect(results.some((e:any)=>e.message.toolName==="handoff_reconcile" && e.message.isError)).toBe(true);
+      await resumed.stop();
+      const corrected = f.client(join(f.root,"sessions",file!));
+      try {
+        await corrected.start();
+        f.control.tools.push({name:"write",args:{path:"answer.json",content:"current correction survives restart"}});
+        await corrected.promptAndWait("Continue under my latest correction.",undefined,15000);
+        expect(await readFile(join(f.cwd,"answer.json"),"utf8")).toBe("current correction survives restart");
+        f.control.synthesis = input => {
+          const owner = input.sources.find((s:any) => s.role === "user" && s.text === correction);
+          return {status:"active",nextAction:"Replace answer.json",claims:[
+            {id:"next",kind:"nextAction",text:"Replace answer.json",refs:[owner.id]}
+          ],exactValues:[],steps:[]};
+        };
+        await corrected.compact();
+        await corrected.promptAndWait("Continue under the replacement instruction through the next Handoff.",undefined,15000);
+        await corrected.compact();
+        expect(handoffs((await corrected.getEntries()).entries)).toHaveLength(2);
+      } finally {await corrected.stop();}
+    } finally { await resumed.stop(); }
+  } finally { await first.stop(); await f.cleanup(); }
+},60000);
+
+it("restores completed paged evidence after restart and follows the current user correction", async () => {
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]);
+  const instruction = "After the upcoming Handoff, search handoff_evidence for PAGED_42, read its original user anchor, then write answer.json.";
+  const original = `${instruction}\n${"padding ".repeat(180)}Claim: VALUE_RESTART`;
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text === original);
+    const actions = ["Search handoff_evidence for PAGED_42", "Read its original user anchor", "Write answer.json"];
+    return {status:"active",nextAction:actions[0],claims:[
+      {id:"next",kind:"nextAction",text:actions[0],refs:[owner.id]}
+    ],exactValues:[{field:"claim",label:"Claim",separator:": ",value:"VALUE_RESTART",
+      source:owner.id,quote:"Claim: VALUE_RESTART"}],steps:actions.map((text,index)=>({
+      id:`s${index+1}`,text,phase:"after_handoff",status:"pending",
+      authorization:{source:owner.id,quote:index===0?"search handoff_evidence for PAGED_42":
+        index===1?"read its original user anchor":"write answer.json"},completion:[]}))};
+  };
+  let c = f.client();
+  try {
+    await c.start(); await c.promptAndWait(original,undefined,15000);
+    const owner = (await c.getEntries()).entries.find((e:any)=>e.type==="message" && e.message.role==="user");
+    const anchor = `${f.id}/${owner.id}/${createHash("sha256").update(JSON.stringify(owner.message)).digest("hex")}`;
+    await c.compact();
+    await c.promptAndWait("Keep this task pending.",undefined,15000); await c.compact();
+    await c.stop();
+    const file = (await readdir(join(f.root,"sessions"))).find(name=>name.endsWith(".jsonl"))!;
+    const session = join(f.root,"sessions",file);
+    c = f.client(session); await c.start();
+    f.control.tools.push(
+      {name:"handoff_evidence_search",args:{query:"PAGED_42"}},
+      {name:"handoff_evidence_read",args:{anchor,start:0,limit:1024}},
+      {name:"handoff_evidence_read",args:{anchor,start:1024,limit:4096}},
+    );
+    await c.promptAndWait("Continue the original evidence recovery; wait before writing.",undefined,15000);
+    await c.stop(); c = f.client(session); await c.start();
+    const requestStart = f.requests.length;
+    f.control.tools.push({name:"write",args:{path:"answer.json",content:'{"answer":"corrected"}'}});
+    await c.promptAndWait("Correction: use corrected as the final answer value. The original evidence reads are already complete; write answer.json now.",undefined,15000);
+    expect(await readFile(join(f.cwd,"answer.json"),"utf8")).toBe('{"answer":"corrected"}');
+    expect(f.requests.slice(requestStart).some(r=>JSON.stringify(r.messages).includes("Correction: use corrected"))).toBe(true);
+    f.control.synthesis = input => ({status:"active",nextAction:"Use corrected as the final answer value",claims:[
+      {id:"next",kind:"nextAction",text:"Use corrected as the final answer value",
+        refs:[input.sources.find((s:any)=>s.role==="user" && s.text.startsWith("Correction: use corrected")).id]}
+    ],exactValues:[],steps:[]});
+    await c.compact();
+    await c.promptAndWait("Keep the current correction for the next maintenance boundary.",undefined,15000);
+    await c.compact();
+    expect(handoffs((await c.getEntries()).entries)).toHaveLength(2);
+  } finally {await c.stop(); await f.cleanup();}
+},60000);
+
+it.each([false,true])("validates one bounded exact-value repair without allowing value changes (malicious=%s)", async malicious => {
+  const f = await fixture(undefined,undefined,["--handoff-native-limit","1"]), c = f.client();
+  const instruction = "Code: FIX_42. Read protected.txt and keep its content.";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any)=>s.role==="user" && s.text===instruction);
+    return {status:"active",nextAction:"Read protected.txt",claims:[
+      {id:"next",kind:"nextAction",text:"Read protected.txt",refs:[owner.id]}
+    ],exactValues:[{field:"code",label:"Code: ",separator:"",value:"FIX_42",source:owner.id,quote:"Code: FIX_42"}],steps:[]};
+  };
+  f.control.patch = () => ({exactValueSplits:[{index:0,label:"Code",separator:": ",
+    ...(malicious?{value:"EVIL"}:{})}],stepChanges:[]});
+  try {
+    await c.start(); await c.promptAndWait(instruction,undefined,15000); await c.compact();
+    await c.promptAndWait("The task remains active.",undefined,15000);
+    if (malicious) {
+      await expect(c.compact()).rejects.toThrow();
+      expect(handoffs((await c.getEntries()).entries)).toHaveLength(0);
+    } else {
+      await c.compact();
+      const state = handoffs((await c.getEntries()).entries)[0].details.state;
+      expect(state.exactValues[0]).toMatchObject({label:"Code",separator:": ",value:"FIX_42",quote:"Code: FIX_42"});
+    }
+    const patches = f.requests.filter(r=>r.messages.some((m:any)=>String(m.content).startsWith("PI_HANDOFF_FIELD_PATCH")));
+    expect(patches).toHaveLength(1);
+    expect(patches[0].max_tokens ?? patches[0].max_completion_tokens).toBeLessThanOrEqual(8192);
+  } finally {await c.stop(); await f.cleanup();}
+},60000);
+
+it("does not revive evidence ordering when the latest user has stopped the task", async () => {
+  const f = await fixture(undefined,undefined,["--handoff-native-limit","1"]), c = f.client();
+  f.control.synthesis = input => ({status:"stopped",nextAction:"",claims:[
+    {id:"stop",kind:"correction",text:"The user cancelled the task.",
+      refs:[input.sources.find((s:any)=>s.role==="user" && s.text==="Cancel that task. Do not continue it.").id]}
+  ],exactValues:[],steps:[]});
+  try {
+    await c.start();
+    await c.promptAndWait("After the upcoming Handoff, search handoff_evidence for STOP_42, read its original user anchor, then write answer.json.",undefined,15000);
+    await c.compact();
+    await c.promptAndWait("Cancel that task. Do not continue it.",undefined,15000);
+    await c.compact();
+    expect(handoffs((await c.getEntries()).entries)[0].details.state.status).toBe("stopped");
+    await expect(readFile(join(f.cwd,"answer.json"),"utf8")).rejects.toMatchObject({code:"ENOENT"});
+  } finally {await c.stop(); await f.cleanup();}
+},60000);
+
+it("repairs a premature completed search to pending without replaying a side effect", async () => {
+  const f = await fixture(undefined,undefined,["--handoff-native-limit","1"],true), c = f.client();
+  const instruction = "After the upcoming Handoff, search handoff_evidence for TIMING_42, read its original user anchor, then write answer.json.";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any)=>s.role==="user" && s.text===instruction);
+    const result = input.sources.find((s:any)=>s.successfulToolResult && s.text.includes("TIMING_42"));
+    return {status:"active",nextAction:"Read its original user anchor",claims:[
+      {id:"next",kind:"nextAction",text:"Read its original user anchor",refs:[owner.id]}
+    ],exactValues:[],steps:[
+      {id:"search",text:"Search handoff_evidence for TIMING_42",phase:"before_handoff",status:"completed",
+        authorization:{source:owner.id,quote:"search handoff_evidence for TIMING_42"},
+        completion:[{source:result.id,quote:result.text.slice(0,60)}]},
+      {id:"read",text:"Read its original user anchor",phase:"after_handoff",status:"pending",
+        authorization:{source:owner.id,quote:"read its original user anchor"},completion:[]}
+    ]};
+  };
+  f.control.patch = () => ({exactValueSplits:[],stepChanges:[{index:0,phase:"after_handoff",status:"pending"}]});
+  try {
+    await c.start(); await c.setThinkingLevel("high");
+    f.control.tools.push({name:"handoff_evidence_search",args:{query:"TIMING_42"}});
+    await c.promptAndWait(instruction,undefined,15000); await c.compact();
+    await c.promptAndWait("Keep the required upcoming search pending.",undefined,15000); await c.compact();
+    const state = handoffs((await c.getEntries()).entries)[0].details.state;
+    expect(state.nextAction).toBe("Search handoff_evidence for TIMING_42");
+    expect(state.steps[0]).toMatchObject({status:"pending",phase:"after_handoff",completion:[]});
+    const patches = f.requests.filter(r=>r.messages.some((m:any)=>String(m.content).startsWith("PI_HANDOFF_FIELD_PATCH")));
+    expect(patches).toHaveLength(1); expect(patches[0].reasoning_effort).toBe("high");
+    await expect(readFile(join(f.cwd,"answer.json"),"utf8")).rejects.toMatchObject({code:"ENOENT"});
+  } finally {await c.stop();await f.cleanup();}
 },60000);

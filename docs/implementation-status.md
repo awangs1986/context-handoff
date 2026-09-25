@@ -1,4 +1,4 @@
-> Current SPEC revision 2 implementation: [plugin design](plugin-design.md) and [acceptance](plugin-acceptance.md). The content below remains historical.
+> Current SPEC revision 3 implementation: [plugin design](plugin-design.md) and [acceptance](plugin-acceptance.md). The content below remains historical.
 
 > Historical import only. The owner restarted the project as a new Pi plugin.
 > This document does not describe implementation progress against SPEC revision 2.

@@ -340,3 +340,47 @@ It does **not** establish a general semantic fidelity advantage over native
 compaction. The sample is small, scenario values were given explicitly, the
 native arm required a fifth prompt to resume, and high-cost repeated evidence
 reads were observed. No production activation or model change followed.
+
+## Evaluation-driven implementation follow-up (2026-09-25)
+
+Integrated the source changes from experiment `7875565` and its restart repair
+`6c49c99` into the implementation branch, preserving the newer main-branch
+ConflictQA/ConFiQA scorers, independent scorer tests and historical results.
+Experimental runtime fault injection and file names were removed; the new
+modules and evidence-tool adapter participate in strict TypeScript compilation.
+
+The public Pi RPC provider fixtures cover:
+
+- Required search → verified original read before an answer write, including
+  two distinct sources, failed/wrong reads and short-range feedback.
+- Normalization of an authorized combined search; an omitted required search
+  still prevents installation rather than being invented by a repair.
+- Restart with unfinished recovery: premature answer writes remain blocked.
+  New unrelated tasks can proceed. A replacement must quote the latest user
+  input; quoting the old task fails, and the valid receipt survives restart.
+- Separate evidence pages jointly satisfy source-bound exact values; restart
+  does not require completed reads again. Current user corrections enter actual
+  outgoing provider requests.
+- A subsequent native compaction and Handoff retain both completed recovery and
+  latest-user replacement. Both initially failed by reviving the historical
+  missing-search check; branch replay now carries retired ordering forward.
+- A stopped task does not revive an old evidence-search requirement.
+- One label/separator patch can correct an invalid exact-value split while a
+  patch attempting to change the value fails without committing a Handoff.
+- A prematurely completed read-only search can be repaired to pending after the
+  upcoming Handoff. The request inherits `high`, uses a bounded output budget,
+  and no answer-write side effect occurs during repair. Before the fix this was
+  incorrectly classified as an entirely omitted search and never reached repair.
+
+The old `it.fails` restart case is now an ordinary passing assertion. Original
+live failures remain in their dated reports. This follow-up uses the real Pi
+process with deterministic provider responses, not a new paid model evaluation.
+It verifies supported lifecycle behavior and validator enforcement, not that a
+live model will always choose the correct quote, step or final answer. The scoped
+guard and semantic reconciliation limits are described in plugin-design.md.
+
+Final integrated verification: `npm run check` passed the strict TypeScript build
+and **64 tests in 5 files** (78.37 seconds): 47 Pi conversation cases, 13 evaluator
+regressions and 4 unchanged historical packet cases. No expected-failure cases
+remain in this suite. `git diff --check` passed. No production installation,
+package publication or fresh paid model comparison was performed in this update.

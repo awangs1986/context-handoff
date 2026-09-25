@@ -283,3 +283,23 @@ The isolated candidate and expected-failure test are preserved at
 [`experiment-field-repair` commit `7875565`](http://192.168.100.1:3000/awangs/Context-handoff/src/commit/7875565),
 separate from the default-plugin implementation branch. Its complete check
 reports 45 passing tests and one expected failure.
+
+
+## Later implementation resolution (2026-09-25)
+
+The failed restart result above remains the outcome at `7875565`. Subsequent
+repair work at experiment commit `6c49c99` replaced transient guard state with
+active-branch replay and converted the expected failure to a normal passing test.
+The implementation branch now integrates that source change, paged recovery,
+latest-user reconciliation and bounded field repair without overwriting the
+newer evaluation scripts or rescoring the old live runs.
+
+The regression also exposed a second lifecycle defect: a valid user replacement
+survived restart but the next Handoff revived the old missing-search check. A
+failing public-conversation test was followed by persisted receipt propagation
+into later synthesis. The same subsequent-boundary test now covers completed
+paged recovery. A cancelled-task regression separately prevents revival of old
+search ordering. A bounded timing-patch regression distinguishes a missing search
+from an existing search whose phase/status needs repair. See plugin-acceptance.md for the final integrated check.
+These are deterministic Pi RPC tests, not a new paid model comparison; the
+single-run live outcomes and comparative limits above remain unchanged.

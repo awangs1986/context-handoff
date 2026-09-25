@@ -18,6 +18,8 @@ import {
   selectSources,
   evidenceIndex,
 } from "./task-state.js";
+import { atomicizeSearch, missingTimedSearch, omittedTimedSearch, repairTaskState } from "./state-repair.js";
+import { registerOrderGuard } from "./order-guard.js";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -25,6 +27,7 @@ import type {
 
 export default function handoff(pi: ExtensionAPI) {
   registerEvidence(pi);
+  const retiredOrderSources = registerOrderGuard(pi);
   const policy = registerPolicy(pi);
   let inputEpoch = 0;
   let pendingContinuation: { epoch: number; nextAction: string } | undefined;
@@ -159,6 +162,9 @@ export default function handoff(pi: ExtensionAPI) {
       "edit",
       "bash",
       "handoff_evidence",
+      "handoff_evidence_search",
+      "handoff_evidence_read",
+      "handoff_reconcile",
     ]);
     for (const e of entries)
       if (e.type === "custom" && e.customType === "pi-handoff-work") {
@@ -219,7 +225,10 @@ export default function handoff(pi: ExtensionAPI) {
           ctx.model.contextWindow - bytes(synthesisPrompt) - generation.outputTokens - 12000,
         ),
       );
+      const retiredOrders = retiredOrderSources(ctx);
+      const timingOriginals = originals.filter(source => !retiredOrders.has(source.id));
       const input = JSON.stringify({
+        retiredEvidenceOrderSources: [...retiredOrders],
         coverage: selection.coverage,
         sources: selection.selected,
         project: {
@@ -255,15 +264,23 @@ export default function handoff(pi: ExtensionAPI) {
         throw new Error(`Synthesis output truncated (${generation.outputTokens} token budget)`);
       if (response.stopReason !== "stop")
         throw new Error(`Synthesis provider failure: ${response.errorMessage ?? response.stopReason}`);
-      const state = validate(
-        JSON.parse(
-          response.content
-            .filter((c) => c.type === "text")
-            .map((c) => c.text)
-            .join(""),
-        ),
-        originals,
+      const generated = JSON.parse(
+        response.content
+          .filter((c) => c.type === "text")
+          .map((c) => c.text)
+          .join(""),
       );
+      atomicizeSearch(generated, originals);
+      if (omittedTimedSearch(generated, timingOriginals))
+        throw Error("Required post-Handoff evidence search omitted from Task State");
+      let state;
+      try {
+        state = validate(structuredClone(generated), originals);
+        if (missingTimedSearch(generated, timingOriginals))
+          throw Error("Required post-Handoff evidence search was marked complete before Handoff");
+      } catch (error) {
+        state = await repairTaskState(generated, originals, error, ctx, generation, signal, timingOriginals);
+      }
       signal.throwIfAborted();
       assertSettled(ctx.sessionManager.getBranch());
       if (
