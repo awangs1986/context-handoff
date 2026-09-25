@@ -249,13 +249,14 @@ This pair does not show a semantic-retention advantage for Handoff. The native
 session retained enough information to search and recover both originals when
 prompted. Handoff reduced tool/model turns here, but consumed 92,095 reported
 tokens versus 88,988 for native in the fifth turn; one run cannot establish a
-cost or latency advantage. The directly observed product gain remains reliable
-automatic continuation at the fourth boundary. The split search/read tools,
+cost or latency advantage. The directly observed product gain is successful
+automatic continuation at the fourth boundary in this run. The split
+search/read tools,
 atomic next actions, multi-source order guard, and actionable read-range
 feedback are promising prototype changes because they addressed concrete
-failed traces. They need restart, interruption and cancellation validation
-before being merged into the default plugin. More items and repetitions are
-needed before choosing a fidelity policy.
+failed traces. The restart failure below must be fixed, then interruption and
+cancellation must be validated before merging into the default plugin. More
+items and repetitions are needed before choosing a fidelity policy.
 
 ## Restart gate for the experimental order guard
 
