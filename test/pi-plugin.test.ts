@@ -1397,3 +1397,93 @@ it("retains multiple recovered sources across tool calls until the user turn end
       .every((m:any) => String(m.content).includes("Temporary evidence"))).toBe(true);
   } finally { await c.stop(); await f.cleanup(); }
 }, 60000);
+
+it("rejects the preserved label-as-value regression and installs grounded exact values", async () => {
+  const sample = JSON.parse(await readFile(resolve("test/fixtures/semantic-regressions.json"), "utf8")).exactValue;
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]), c = f.client();
+  let value = sample.rejected;
+  f.control.synthesis = input => {
+    const source = input.sources.find((s:any) => s.role === "user" && s.text.includes(sample.quote));
+    return {status:"active", nextAction:"Write answer.json", claims:[
+      {id:"next",kind:"nextAction",text:"Write answer.json",refs:[source.id]}
+    ], exactValues:[{field:sample.field,label:sample.label,separator:sample.separator,value,source:source.id,quote:sample.quote}], steps:[]};
+  };
+  try {
+    await c.start(); await c.promptAndWait(sample.instruction, undefined, 15000); await c.compact();
+    await c.promptAndWait("Keep the authorized task pending.", undefined, 15000);
+    await expect(c.compact()).rejects.toThrow();
+    expect(handoffs((await c.getEntries()).entries)).toHaveLength(0);
+    value = sample.expected;
+    await c.compact();
+    const state = JSON.parse(handoffs((await c.getEntries()).entries)[0].summary).state;
+    expect(state.exactValues[0]).toMatchObject({field:"identifier", label:"Résumé-ID", value:"ZX_729/β", quote:"Résumé-ID: ZX_729/β"});
+    expect(state.exactValues[0].hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(state.exactValues[0].timestamp).toBeTruthy();
+    await c.promptAndWait("Continue authorized work.", undefined, 15000);
+    expect(JSON.stringify(f.requests.at(-1))).toContain("exactValues");
+  } finally {await c.stop(); await f.cleanup();}
+},60000);
+
+it("rejects pre-Handoff completion of a required post-Handoff search and preserves the pending step", async () => {
+  const sample = JSON.parse(await readFile(resolve("test/fixtures/semantic-regressions.json"), "utf8")).procedure;
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]), c = f.client();
+  let completed = true;
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text.includes(sample.instruction));
+    const observation = input.sources.find((s:any) => s.role === "toolResult");
+    return {status:"active",nextAction:sample.step,claims:[
+      {id:"next",kind:"nextAction",text:sample.step,refs:[owner.id]}
+    ], exactValues:[],steps:[{id:"search",text:sample.step,phase:sample.phase,
+      status:completed?"completed":"pending",authorization:{source:owner.id,quote:sample.instruction},
+      completion:completed?[{source:observation.id,quote:'"matches"'}]:[]}]};
+  };
+  try {
+    await c.start(); await c.promptAndWait(sample.instruction, undefined, 15000); await c.compact();
+    f.control.tools.push({name:"handoff_evidence",args:{action:"search",query:"ZX_729"}});
+    await c.promptAndWait("Retain this earlier observation without treating it as post-Handoff work.", undefined, 15000);
+    await expect(c.compact()).rejects.toThrow();
+    expect(handoffs((await c.getEntries()).entries)).toHaveLength(0);
+    completed = false;
+    f.control.pressure = true;
+    await c.promptAndWait("Proceed with authorized post-Handoff work.", undefined, 20000);
+    const state = JSON.parse(handoffs((await c.getEntries()).entries)[0].summary).state;
+    expect(state.steps[0]).toMatchObject({phase:"after_handoff",status:"pending",completion:[]});
+    expect(state.steps[0].authorization.hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(state.nextAction).toBe("Search handoff_evidence for ZX_729");
+    expect(JSON.stringify(f.requests.at(-1))).toContain("after_handoff");
+  } finally {await c.stop(); await f.cleanup();}
+},60000);
+
+it("requires successful tool evidence for completed steps and retains ordered unfinished work", async () => {
+  const f = await fixture(undefined, undefined, ["--handoff-native-limit", "1"]), c = f.client();
+  let proof: "assistant" | "failed" | "toolResult" = "assistant";
+  let done = false;
+  const instruction = "Read protected.txt, then write answer.json. Do not repeat a completed read.";
+  f.control.synthesis = input => {
+    const owner = input.sources.find((s:any) => s.role === "user" && s.text === instruction);
+    const source = input.sources.find((s:any) => proof === "failed"
+      ? s.role === "toolResult" && !s.successfulToolResult
+      : s.role === proof && (proof !== "toolResult" || s.successfulToolResult));
+    return {status:done?"done":"active",nextAction:"Write answer.json",claims:[
+      {id:"next",kind:"nextAction",text:"Write answer.json",refs:[owner.id]}
+    ],exactValues:[],steps:[
+      {id:"read",text:"Read protected.txt",phase:"anytime",status:"completed",
+        authorization:{source:owner.id,quote:instruction},completion:[{source:source.id,quote:source.text.slice(0,40)}]},
+      {id:"write",text:"Write answer.json",phase:"anytime",status:"pending",
+        authorization:{source:owner.id,quote:instruction},completion:[]}
+    ]};
+  };
+  try {
+    await c.start(); await c.promptAndWait(instruction, undefined, 15000); await c.compact();
+    f.control.tools.push({name:"read",args:{path:"absent-file"}},{name:"read",args:{path:"protected.txt"}});
+    await c.promptAndWait("Collect observations for the authorized read.", undefined, 15000);
+    await expect(c.compact()).rejects.toThrow();
+    proof = "failed"; await expect(c.compact()).rejects.toThrow();
+    proof = "toolResult"; done = true; await expect(c.compact()).rejects.toThrow();
+    done = false; await c.compact();
+    const state = JSON.parse(handoffs((await c.getEntries()).entries)[0].summary).state;
+    expect(state.steps.map((s:any)=>s.status)).toEqual(["completed","pending"]);
+    expect(state.steps[0].completion[0].hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(state.nextAction).toBe("Write answer.json");
+  } finally {await c.stop(); await f.cleanup();}
+},60000);

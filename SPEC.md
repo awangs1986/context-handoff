@@ -184,3 +184,34 @@ continuation, and cumulative processed tokens from active context capacity.
 ### Recovered evidence lifetime
 
 Keep recovered evidence across intermediate tool calls in the same user turn, within a 32 KiB content window. Evict oldest evidence on capacity pressure and clear prior-turn evidence on new user input. Keep tool call/result pairing and original recovery available; a tool call alone does not establish that earlier evidence has been consumed.
+
+
+### Exact values and procedural state (revision 3 follow-up)
+
+The synthesis contract includes bounded `exactValues` and ordered `steps` arrays.
+An exact-value record carries field name, label, literal separator, value, source
+ID and a short original quote. The program verifies the quote exists and equals
+label + separator + value, then binds the original hash and timestamp. Values are
+lexical strings: never coerce numbers, normalize Unicode, strip units or silently
+repair a mismatched span. Narrative claims must not override structured values.
+Label/field selection and effective-source choice remain model interpretations;
+this check does not infer all missing values from arbitrary prose.
+
+Each step records its user authorization quote, phase relative to the upcoming
+Handoff (`before_handoff`, `after_handoff`, `anytime`), and status (`pending`,
+`completed`, `uncertain`). Completion requires quoted original successful tool
+results paired with original assistant tool calls. Assistant statements and failed
+results do not establish completion. Existing evidence precedes the upcoming
+Handoff, so it cannot complete an `after_handoff` step. Unfinished mandatory
+`before_handoff` steps block installation. Pending/uncertain steps have no
+completion evidence. An active next action equals the first pending step, and
+uncertain steps suppress automatic continuation. A done task cannot retain
+unfinished steps. Do not revive already completed one-time historical work.
+
+Bounds: 16 exact values and 12 steps; 512-character values/actions, 1024-character
+quotes, at most four completion references per step, all within the existing
+12 KiB state and 24 KiB installed-context budgets. Missing arrays on legacy states
+normalize to empty arrays for compatibility, not certified complete coverage.
+Malformed present records fail preparation and preserve the previous context.
+This follow-up implements the owner's first two steps only; it does not change the
+live evaluation oracle or claim a new real-model pass.

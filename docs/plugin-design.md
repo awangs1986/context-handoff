@@ -167,3 +167,31 @@ The model's 12-claim budget makes omission possible; complete original owner inp
 remains in synthesis and original recovery stays available. Hash/reference checks
 cannot prove coverage or semantic correctness. Fidelity must be checked against
 independent expected outcomes after automatic continuation.
+
+
+## Exact values and ordered procedures
+
+`state.exactValues` separates `field`, `label`, `separator`, `value`, `source` and
+`quote`. `grounding.ts` validates a literal original span and its component equality,
+then rebuilds each record with program-owned hash and timestamp. The original
+`Résumé-ID: ZX_729/β` therefore admits label `Résumé-ID`, separator `: ` and value
+`ZX_729/β`; a value containing the full labeled span fails that declared mapping.
+This validates a model-selected mapping, not arbitrary semantic extraction. An
+omitted field, wrong but internally consistent label mapping, conflicting original
+sources or incorrect downstream use still needs semantic evaluation.
+
+`state.steps` is an ordered record of user-authorized actions. A successful tool
+observation must have a preceding matching call ID/name and a non-error result;
+its quote and source metadata are retained in completed-step evidence. Success of
+a tool protocol does not prove the result semantically completes an action. The
+program validates phase, status, evidence provenance and next-action consistency;
+the model still interprets whether the evidence is relevant. Completed post-Handoff
+steps cannot cite pre-Handoff observations. This avoids turning an early search
+into proof that a required later search already happened.
+
+The synthesis prompt requests these records and the installed recovery guidance
+instructs continuation to use exact values without their labels and follow pending
+steps in order. No extra model judge or runtime action interceptor is introduced.
+Empty legacy arrays do not establish completeness; all records share existing
+state, synthesis and installed-context size limits. Unknown completion remains
+uncertain and must not cause side-effect replay.

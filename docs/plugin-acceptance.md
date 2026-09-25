@@ -199,3 +199,36 @@ All four engineering changes are implemented, but strict real-model acceptance
 on the final implementation is **not fully passed**. Further semantic work should
 address exact-value interpretation and preservation of pending procedural
 requirements, retaining this sample as a regression workload.
+
+
+## Follow-up: fixed failure samples and grounded records
+
+Scope: only the owner's first two requested next steps. No paid real-model rerun,
+comparative evaluation or changed live oracle is included in this follow-up.
+`test/fixtures/semantic-regressions.json` contains synthetic, independently expected
+reproductions of the two failures, not raw runtime transcripts. The identifier
+expectation remains `ZX_729/β`; a search before the upcoming Handoff does not
+satisfy a required search afterward.
+
+At the previously approved public Pi conversation seam:
+
+1. RED: compaction wrongly resolved with `Résumé-ID: ZX_729/β` in the declared
+   value field. GREEN: the inconsistent labeled mapping is rejected without
+   installing a Handoff; a corrected mapping installs the exact value, original
+   quote and program-owned hash/timestamp into the continuing context.
+2. RED: compaction wrongly resolved with an `after_handoff` search already marked
+   completed by a real earlier tool result. GREEN: the premature completion is
+   rejected; a pending step commits and reaches automatic continuation with its
+   original authorization and timing intact.
+3. Additional regression: assistant assertions and failed reads cannot establish
+   completed steps; done status with pending work is rejected; a real successful
+   read may complete the first step while the subsequent write remains pending.
+
+These are deterministic provider-response fixtures through the real Pi RPC
+process. They validate program checks and transmission of grounded state, not
+real-model adoption, recall of every requirement or correctness of final output.
+The prior final-version live failure remains recorded above.
+
+Final follow-up verification: `npm run check` passed the TypeScript build and
+**41 tests in 2 files** (69.74 seconds): 37 Pi conversation cases and 4 unchanged
+historical cases. `git diff --check` passed.

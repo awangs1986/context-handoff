@@ -33,6 +33,7 @@ npm pack
 - The fourth **would-compact** event triggers Handoff; nothing switches immediately
   after the third success. Manual successes count too.
 - Original user constraints/corrections are retained as source inputs. A small model state cites source IDs; the program binds hashes, timestamps, authority labels and supersession links. Original history and recorded project observations remain recoverable.
+- Exact-value records separate labels from values and retain quoted originals. Ordered steps preserve pending/completed/uncertain status, required timing and completion evidence. These checks do not prove complete semantic coverage.
 - `handoff_evidence` searches original active-branch history and reads verified ranges.
 - Preparation, retrieval and continuation have explicit budgets and failure states.
   Third-party asynchronous tools require the documented settlement event.

@@ -284,7 +284,7 @@ export default function handoff(pi: ExtensionAPI) {
 
       const summary = JSON.stringify({
         recovery:
-          "Use handoff_evidence search for exact lexical details missing here; read verified anchors. Original history remains authoritative.",
+          "Use state.exactValues.value without its label; narrative claims do not override exact values. Follow state.steps in order and retain required before/after timing. Completion evidence is historical observation, not proof of semantic success. Use handoff_evidence search for missing details and read verified anchors. Original history remains authoritative.",
         handoff: randomUUID(),
         project: {
           revision: project.revision, observedAt: project.observedAt,
