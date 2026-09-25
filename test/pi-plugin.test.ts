@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import { RpcClient } from "@earendil-works/pi-coding-agent";
 import { expect, it } from "vitest";
 
-async function fixture(extra?: string, packagePath?: string) {
+async function fixture(extra?: string, packagePath?: string, flags: string[] = [], reasoning = false) {
   const root = await mkdtemp(join(tmpdir(), "pi-handoff-"));
   const cwd = join(root, "workspace"),
     agent = join(root, "agent");
@@ -162,10 +162,10 @@ async function fixture(extra?: string, packagePath?: string) {
           models: ["fixture", "alternate"].map((id) => ({
             id,
             name: id,
-            reasoning: false,
+            reasoning,
             input: ["text", "image"],
             contextWindow: 128000,
-            maxTokens: 4096,
+            maxTokens: reasoning ? 32768 : 4096,
           })),
         },
       },
@@ -199,6 +199,7 @@ async function fixture(extra?: string, packagePath?: string) {
       ? []
       : ["--no-extensions", "--extension", resolve("src/plugin/extension.ts")]),
     ...(extra ? ["--extension", extension] : []),
+    ...flags,
   ];
   return {
     root,
@@ -1279,4 +1280,120 @@ it("reports an installed checkpoint honestly when recovery journal updates remai
     await c.stop();
     await f.cleanup();
   }
+}, 60000);
+
+it("uses configured native cadence without handing off immediately after a success", async () => {
+ const f=await fixture(undefined, undefined, ["--handoff-native-limit", "1"]), c=f.client();
+ try {
+  await c.start();
+  await c.promptAndWait("Preserve protected.txt. Read protected.txt when requested.", undefined,15000);
+  await c.compact();
+  expect(handoffs((await c.getEntries()).entries)).toHaveLength(0);
+  f.control.pressure=true;
+  await c.promptAndWait("Read protected.txt and continue authorized work.",undefined,20000);
+  const entries=(await c.getEntries()).entries;
+  expect(handoffs(entries)).toHaveLength(1);
+  expect(entries.filter((e:any)=>e.type==="compaction"&&!e.fromHook)).toHaveLength(1);
+  expect((await c.getState()).sessionId).toBe(f.id);
+ } finally { await c.stop(); await f.cleanup(); }
+},60000);
+
+it("inherits high reasoning and bounded configurable generation budgets at automatic Handoff", async () => {
+ const f=await fixture(undefined,undefined,["--handoff-native-limit","1","--handoff-output-tokens","20000","--handoff-timeout-ms","90000"],true), c=f.client();
+ try {
+  await c.start();await c.setThinkingLevel("high");
+  await c.promptAndWait("Preserve protected.txt. Read protected.txt.",undefined,15000);await c.compact();
+  f.control.pressure=true;
+  await c.promptAndWait("Read protected.txt and continue.",undefined,20000);
+  const r=f.requests.find(r=>JSON.stringify(r.messages).includes("PI_HANDOFF_SYNTHESIS"));
+  expect(r.reasoning_effort).toBe("high");
+  expect(r.max_completion_tokens??r.max_tokens).toBe(20000);
+  expect(handoffs((await c.getEntries()).entries)).toHaveLength(1);
+ } finally {await c.stop();await f.cleanup();}
+},60000);
+
+it("binds concise source references and recovers program-recorded project evidence", async () => {
+ const f=await fixture(undefined,undefined,["--handoff-native-limit","1"]),c=f.client();
+ try {
+  await writeFile(join(f.cwd,"status.json"),'{"revision":"r3","tests_at":"r1","error":"E_SNAPSHOT_42"}');
+  f.control.synthesis=input=>({status:"active",nextAction:"Read protected.txt",claims:[
+   {id:"next",kind:"nextAction",text:"Read protected.txt",refs:[input.sources.find((s:any)=>s.role==="user").id]},
+   {id:"verify",kind:"uncertainty",text:"Historical tests do not verify r3",refs:["project:status.json"]}
+  ]});
+  await c.start();await c.promptAndWait("Preserve protected.txt. Read protected.txt.",undefined,15000);await c.compact();
+  f.control.pressure=true;await c.promptAndWait("Read protected.txt and finish pending work.",undefined,20000);
+  const h=handoffs((await c.getEntries()).entries)[0];expect(h).toBeDefined();
+  const summary=JSON.parse(h.summary);
+  expect(summary.state.claims[0].evidence[0].hash).toMatch(/^[a-f0-9]{64}$/);
+  expect(summary.state.claims[0].evidence[0].quote).toBeUndefined();
+  expect(summary.project.verification).toContain("historical");
+  await writeFile(join(f.cwd,"status.json"),'{"revision":"r4"}');
+  f.control.tools.push({name:"handoff_evidence",args:{action:"search",query:"E_SNAPSHOT_42"}});
+  await c.promptAndWait("Find the prior recorded project observation.",undefined,15000);
+  const found=JSON.parse(((await c.getMessages()).filter((m:any)=>m.role==="toolResult").at(-1) as any).content[0].text);
+  const match=found.matches.find((m:any)=>m.role==="historical-project-observation");expect(match).toBeDefined();
+  f.control.tools.push({name:"handoff_evidence",args:{action:"read",anchor:match.anchor,start:0,limit:4096}});
+  await c.promptAndWait("Read that snapshot without treating it as current verification.",undefined,15000);
+  expect(JSON.stringify(f.requests.at(-1))).toContain("E_SNAPSHOT_42");
+ } finally {await c.stop();await f.cleanup();}
+},60000);
+
+it.each([
+ [[],16384],
+ [["--handoff-output-tokens","65536"],32768],
+] as const)("bounds high generation capacity for flags %j", async (flags, expected) => {
+ const f=await fixture(undefined,undefined,["--handoff-native-limit","1",...flags],true),c=f.client();
+ try {
+  await c.start();await c.setThinkingLevel("high");
+  await c.promptAndWait("Preserve protected.txt. Read protected.txt.",undefined,15000);await c.compact();
+  f.control.pressure=true;await c.promptAndWait("Read protected.txt.",undefined,20000);
+  const r=f.requests.find(r=>JSON.stringify(r.messages).includes("PI_HANDOFF_SYNTHESIS"));
+  expect(r.max_completion_tokens??r.max_tokens).toBe(expected);
+  const h=handoffs((await c.getEntries()).entries)[0];
+  expect(h.details.generation.timeoutMs).toBe(120000);
+ }finally{await c.stop();await f.cleanup();}
+},60000);
+
+it("reports deadline failure while keeping original context and preventing native fallback", async () => {
+ const f=await fixture(undefined,undefined,["--handoff-native-limit","1","--handoff-timeout-ms","100"]),c=f.client();
+ try {
+  await c.start();await c.promptAndWait("Preserve protected.txt. Read protected.txt.",undefined,15000);await c.compact();
+  f.control.gate=()=>new Promise(r=>setTimeout(r,400));f.control.pressure=true;
+  await c.promptAndWait("Read protected.txt and continue authorized work.",undefined,20000);
+  const es=(await c.getEntries()).entries;
+  expect(handoffs(es)).toHaveLength(0);
+  expect(es.filter((e:any)=>e.type==="compaction")).toHaveLength(1);
+  expect(JSON.stringify(es)).toContain("Synthesis deadline exceeded (100 ms)");
+  expect(await readFile(join(f.cwd,"protected.txt"),"utf8")).toBe("keep this exact file");
+ }finally{await c.stop();await f.cleanup();}
+},60000);
+
+it("rejects invalid cadence instead of silently using native recovery", async () => {
+ const f=await fixture(undefined,undefined,["--handoff-native-limit","0"]),c=f.client();
+ try{
+  await c.start();await c.promptAndWait("Preserve protected.txt.",undefined,15000);
+  await expect(c.compact()).rejects.toThrow();
+  const es=(await c.getEntries()).entries;
+  expect(es.filter((e:any)=>e.type==="compaction")).toHaveLength(0);
+  expect(JSON.stringify(es)).toContain("handoff-native-limit must be an integer");
+ }finally{await c.stop();await f.cleanup();}
+},60000);
+
+it("retains multiple recovered sources across tool calls until the user turn ends", async () => {
+  const f = await fixture(), c = f.client();
+  try {
+    await c.start();
+    await c.promptAndWait("Record ALPHA_137 and BETA_17 as independent facts.", undefined, 15000);
+    f.control.tools.push(
+      { name: "handoff_evidence", args: { action: "search", query: "ALPHA_137" } },
+      { name: "handoff_evidence", args: { action: "search", query: "BETA_17" } },
+    );
+    await c.promptAndWait("Recover both records and compare them.", undefined, 15000);
+    const recovered = f.requests.at(-1).messages.filter((m:any) => m.role === "tool");
+    expect(recovered).toHaveLength(2);
+    expect(recovered.every((m:any) => String(m.content).includes('"matches"'))).toBe(true);
+    await c.promptAndWait("Start the next task.", undefined, 15000);
+    expect(f.requests.at(-1).messages.filter((m:any) => m.role === "tool")
+      .every((m:any) => String(m.content).includes("Temporary evidence"))).toBe(true);
+  } finally { await c.stop(); await f.cleanup(); }
 }, 60000);

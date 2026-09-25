@@ -1,13 +1,13 @@
 # Pi Handoff implementation
 
-Implements SPEC revision 2 as a new Pi package. The Coffee import remains unchanged
+Implements SPEC revision 3 as a new Pi package. The Coffee import remains unchanged
 and is not linked by the package entry. Supported and tested runtime: Pi 0.87.1,
 Node 22.23.2, Linux, persistent local session storage outside the workspace.
 
 ## Public integration
 
 `session_before_compact` reads successful native compactions from the active
-branch. Three are allowed; the next preparation is replaced by an attributed
+branch. The configured count (default three) is allowed; the next preparation is replaced by an attributed
 Handoff summary. Failed attempts have no committed native entry and do not count.
 A plugin compaction starts a new cycle. Existing native history is counted, rather
 than guessing a process-local counter. Pi owns its pairing-safe cut point, session
@@ -15,7 +15,7 @@ identity, original history, system instructions, tool schemas and selected model
 No Pi core patch or Coffee Host is involved.
 
 Synthesis uses `ctx.modelRegistry.streamSimple()` with the selected provider,
-including its request-time authentication. It is separate from native synthesis.
+including its request-time authentication and Pi thinking level via the provider-neutral `reasoning` option. Budget settings are captured for each attempt; a thinking-level change during generation invalidates the result. It is separate from native synthesis.
 Manual compaction aborts the active run in Pi; this plugin does not restart that
 manually stopped run. Threshold Handoff prepares one continuation at
 `agent_before_settle`, using a hidden custom-message draft and `continue: true`.
@@ -34,15 +34,13 @@ explicit. Synthesis cannot claim omitted observations were verified. Critical
 unresolved conflicts must produce `uncertain`, which stops automatic continuation.
 There is no recursive summary ladder and no continuously maintained notes.
 
-Claims have kinds, exact source quotations and explicit supersession links.
-Validation checks quotation content, source existence, claim kinds and replacement
-targets. Tool/assistant evidence alone cannot become an objective, owner constraint,
+The model returns at most 12 claims of 512 characters each, using source IDs instead of reproducing quotations and metadata. The program binds source IDs to original hashes and observation timestamps. Legacy quoted evidence is still accepted and checked literally. Validation checks source existence, claim kinds and replacement targets. Tool/assistant evidence alone cannot become an objective, owner constraint,
 correction or accepted decision. An active next action must itself be attributed
 to original user evidence. Authority labels are computed by the plugin.
 
 **These checks establish attribution, not entailment.** A model can still
 misinterpret a quote, mistake a quotation within a user message for an instruction,
-or misjudge completion. The synthesis prompt explicitly addresses those cases;
+or misjudge completion. Whole-message source IDs establish attribution, not statement-level entailment. The synthesis prompt explicitly addresses those cases;
 only a separately authorized semantic evaluation can measure the remaining error.
 There is no claim of zero drift or a proven safe three-compaction interval.
 
@@ -63,9 +61,10 @@ Foreign, missing, changed, out-of-branch and split-UTF-8 requests return explici
 errors. Search previews include role and discovery anchors; compact indexes may
 omit entries but the original-history search can still find them.
 
-Consumed recovery tool bodies are replaced in later provider context by a short
-retrieval reminder; original tool history remains stored, and tool-call/result
-pairing is preserved. Media admitted by Pi remains in its native history. Textual
+Recovered tool bodies remain available across intermediate tool calls in the same
+user turn, within a 32 KiB content window (newest first). A new user turn or window
+pressure replaces expired bodies with a short retrieval reminder. Original tool
+history remains stored, and tool-call/result pairing is preserved. Media admitted by Pi remains in its native history. Textual
 recovery reports that images were retained without claiming visual understanding.
 Rejected or omitted-at-ingress media is not recreated by the plugin.
 
@@ -75,10 +74,11 @@ Rejected or omitted-at-ingress media is not recreated by the plugin.
 | --- | --- |
 | Original history integrity/recovery scan | 8 MiB |
 | Mandatory + selected synthesis source payload | 96 KiB, further reduced for model capacity |
-| Generated Task State | 12 KiB; provider output cap 4,096 tokens |
+| Generated Task State | 12 claims / 512 characters per claim and next action; installed state 12 KiB |
+| Provider output (including reasoning) | Default 16,384 with reasoning, 4,096 off; configurable 1,024–65,536, capped by model and half-context capacity |
 | Compact evidence index | 8 KiB plus coverage/discovery metadata |
 | Installed Handoff summary | 24 KiB |
-| Synthesis deadline / automatic synthesis retries | 30 seconds / zero |
+| Synthesis deadline / automatic synthesis retries | Default 120 seconds with reasoning, 60 seconds off; configurable 100–300,000 ms / zero |
 | Project inventory / file bytes | 1,024 paths / 8 MiB |
 | Project text / individual inline file | 32 KiB / 8 KiB |
 | Each read-only Git operation | 3 seconds |
@@ -150,3 +150,20 @@ billion-context-pi 0.1.77 at `fd8095e69ca3317b52fb58adccf9745a3dc18dfa`
 (original-history search, scoped recovery and goal evolution). See the research
 note. Existing Coffee snapshots/provenance/licenses are unchanged and excluded
 from the shipped plugin files. New plugin distribution remains private/UNLICENSED.
+
+## Program-owned evidence record
+
+Native history remains the original-message store. Each committed Handoff's native
+compaction details contain the deterministic source manifest (ID, role, hash,
+timestamp), history fingerprint and bounded read-only project snapshot. The model
+never generates that record. Active context contains concise state, current project
+observation time/revision and a compact index, not the full archived project bodies.
+`handoff_evidence` searches/reads project snapshots from committed Handoffs on the
+active branch with a `historical-project-observation` role. Their anchors identify
+the compaction and source index and hash actual stored bytes. They confer neither
+owner authority nor verification of a later workspace revision.
+
+The model's 12-claim budget makes omission possible; complete original owner input
+remains in synthesis and original recovery stays available. Hash/reference checks
+cannot prove coverage or semantic correctness. Fidelity must be checked against
+independent expected outcomes after automatic continuation.

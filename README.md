@@ -1,6 +1,6 @@
 # Pi Handoff Plugin
 
-A Pi plugin that allows three successful native compactions, then replaces the
+A Pi plugin that defaults to three successful native compactions, then replaces the
 next compaction with an attributed Handoff in the same visible conversation.
 Authorized active work continues automatically. Completed or cancelled work stays
 stopped. Earlier messages and evidence remain available through original-history
@@ -32,17 +32,16 @@ npm pack
 
 - The fourth **would-compact** event triggers Handoff; nothing switches immediately
   after the third success. Manual successes count too.
-- Original user constraints/corrections are retained as source inputs. Claims carry
-  verified quotations, authority labels and supersession links.
+- Original user constraints/corrections are retained as source inputs. A small model state cites source IDs; the program binds hashes, timestamps, authority labels and supersession links. Original history and recorded project observations remain recoverable.
 - `handoff_evidence` searches original active-branch history and reads verified ranges.
 - Preparation, retrieval and continuation have explicit budgets and failure states.
   Third-party asynchronous tools require the documented settlement event.
 - Scripted-provider acceptance demonstrates orchestration and source integrity.
-  Improved real-model comprehension has **not** been measured or claimed.
+  A bounded live conversation evaluation is documented separately; universal fidelity improvement is not claimed.
 
 ## Project documents
 
-- [Specification](SPEC.md): authoritative revision 2.
+- [Specification](SPEC.md): authoritative revision 3.
 - [Implementation and budgets](docs/plugin-design.md).
 - [Acceptance and TDD evidence](docs/plugin-acceptance.md).
 - [Domain vocabulary](CONTEXT.md).
@@ -53,3 +52,25 @@ The old `src/context`, integration snapshots and four packet tests are historica
 Coffee references. The new package entry does not import them; their passing tests
 are not new-plugin acceptance. [Historical status](docs/implementation-status.md)
 and [provenance](provenance.json) remain available.
+
+## Configuration
+
+```sh
+pi --handoff-native-limit 3 --handoff-output-tokens 16384 --handoff-timeout-ms 120000
+```
+
+Cadence counts committed successes on the active branch; three is a default policy,
+not an experimentally established optimum. Numeric flags are validated. Generation
+inherits Pi's current thinking strength, including `high`. Without budget flags,
+reasoning uses up to 16,384 output tokens / 120 seconds and thinking-off uses
+4,096 / 60 seconds. Model/context limits can reduce the output cap. A higher cap
+allows reasoning room; it does not enlarge the concise installed task state.
+Failures preserve previous context and report the specific reason, with no retries.
+
+Optional real-model acceptance from a source checkout (never run by `npm test`): set
+`PI_HANDOFF_EVAL_API_KEY`, `PI_HANDOFF_EVAL_BASE_URL`, and
+`PI_HANDOFF_EVAL_MODEL` in the environment, then run
+`node scripts/evaluate-live.mjs /absolute/artifacts/outside/the/repository`.
+This makes paid requests, uses synthetic files and records raw synthetic requests
+outside Git. The script forwards requests unchanged and requires automatic
+compaction, autonomous continuation, exact task results and original recovery.

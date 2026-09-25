@@ -7,7 +7,7 @@ export function registerEvidence(pi: ExtensionAPI) {
     name: "handoff_evidence",
     label: "Original evidence",
     description:
-      "Search original admitted active-branch history (including before Handoffs), or read a verified anchor with a bounded UTF-8 byte range. Tool/assistant evidence is not user authorization. Search exact names omitted from the brief. Images remain in original history, not visually interpreted here.",
+      "Search original admitted active-branch history and recorded historical project snapshots (including before Handoffs), or read a verified anchor with a bounded UTF-8 byte range. Tool/assistant evidence is not user authorization. Search exact names omitted from the brief. Images remain in original history, not visually interpreted here.",
     parameters: Type.Object({
       action: Type.Union([Type.Literal("search"), Type.Literal("read")]),
       query: Type.Optional(Type.String({ maxLength: 256 })),
@@ -35,6 +35,7 @@ export function registerEvidence(pi: ExtensionAPI) {
             .split("\n")
             .map((l) => JSON.parse(l))
             .filter((e) => admitted.has(e.id)),
+          true,
         );
         const anchor = (s: (typeof originals)[number]) =>
           `${session}/${s.id}/${s.hash}`;
@@ -100,21 +101,34 @@ export function registerEvidence(pi: ExtensionAPI) {
       };
     },
   });
-  pi.on("context", (event) => ({
-    messages: event.messages.map((m: any, i) =>
-      m.role === "toolResult" &&
-      m.toolName === "handoff_evidence" &&
-      event.messages.slice(i + 1).some((n: any) => n.role === "assistant")
-        ? {
-            ...m,
-            content: [
-              {
+  pi.on("context", (event) => {
+    // Tool calls are intermediate reasoning steps, not evidence consumption.
+    // Keep recent evidence together within this user turn so sources can be compared.
+    let lastUser = -1;
+    event.messages.forEach((m, i) => { if (m.role === "user") lastUser = i; });
+    const retained = new Set<number>();
+    let budget = 32768;
+    for (let i = event.messages.length - 1; i > lastUser; i--) {
+      const message = event.messages[i];
+      if (message.role !== "toolResult" || message.toolName !== "handoff_evidence") continue;
+      const size = bytes(message.content);
+      if (size <= budget) {
+        retained.add(i);
+        budget -= size;
+      }
+    }
+    return {
+      messages: event.messages.map((m: any, i) =>
+        m.role === "toolResult" && m.toolName === "handoff_evidence" && !retained.has(i)
+          ? {
+              ...m,
+              content: [{
                 type: "text",
-                text: "[Temporary evidence consumed; use handoff_evidence to retrieve the original again.]",
-              },
-            ],
-          }
-        : m,
-    ),
-  }));
+                text: "[Temporary evidence expired at a new user turn or the 32 KiB recovery window; retrieve the original again if needed.]",
+              }],
+            }
+          : m,
+      ),
+    };
+  });
 }

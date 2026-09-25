@@ -1,3 +1,4 @@
+import { registerPolicy } from "./config.js";
 import {
   load,
   save,
@@ -24,6 +25,7 @@ import type {
 
 export default function handoff(pi: ExtensionAPI) {
   registerEvidence(pi);
+  const policy = registerPolicy(pi);
   let inputEpoch = 0;
   let pendingContinuation: { epoch: number; nextAction: string } | undefined;
   let recoveryBlocked = false;
@@ -195,8 +197,8 @@ export default function handoff(pi: ExtensionAPI) {
         if ((e.details as any)?.plugin === "pi-handoff") count = 0;
         else if (!e.fromHook) count++;
       }
-    if (count < 3) return;
     try {
+      if (count < policy.nativeLimit()) return;
       if (recoveryBlocked) throw new Error("Handoff recovery required");
       assertSettled(ctx.sessionManager.getBranch());
       const epoch = inputEpoch,
@@ -206,6 +208,7 @@ export default function handoff(pi: ExtensionAPI) {
       if (ctx.hasPendingMessages())
         throw new Error("New input is waiting; Handoff deferred");
       if (!ctx.model) throw new Error("Selected model unavailable");
+      const generation = policy.generation(ctx.model);
       const history = historyFingerprint(ctx);
       const project = projectSnapshot(ctx.cwd);
       const originals = [...sources(event.branchEntries), ...project.sources];
@@ -213,7 +216,7 @@ export default function handoff(pi: ExtensionAPI) {
         originals,
         Math.min(
           94000,
-          ctx.model.contextWindow - bytes(synthesisPrompt) - 12000,
+          ctx.model.contextWindow - bytes(synthesisPrompt) - generation.outputTokens - 12000,
         ),
       );
       const input = JSON.stringify({
@@ -227,12 +230,12 @@ export default function handoff(pi: ExtensionAPI) {
       });
       if (
         bytes(input) > 98304 ||
-        bytes(input) + bytes(synthesisPrompt) + 8192 > ctx.model.contextWindow
+        bytes(input) + bytes(synthesisPrompt) + generation.outputTokens + 8192 > ctx.model.contextWindow
       )
         throw new Error("Original-source coverage exceeds preparation budget");
       const signal = AbortSignal.any([
         event.signal,
-        AbortSignal.timeout(30000),
+        AbortSignal.timeout(generation.timeoutMs),
       ]);
       const response = await ctx.modelRegistry
         .streamSimple(
@@ -241,11 +244,17 @@ export default function handoff(pi: ExtensionAPI) {
             systemPrompt: synthesisPrompt,
             messages: [{ role: "user", content: input, timestamp: Date.now() }],
           },
-          { maxTokens: 4096, signal },
+          { maxTokens: generation.outputTokens, reasoning: generation.reasoning, signal },
         )
         .result();
+      if (signal.aborted) {
+        if (event.signal.aborted) throw new Error("Handoff cancelled");
+        throw new Error(`Synthesis deadline exceeded (${generation.timeoutMs} ms)`);
+      }
+      if (response.stopReason === "length")
+        throw new Error(`Synthesis output truncated (${generation.outputTokens} token budget)`);
       if (response.stopReason !== "stop")
-        throw new Error("Incomplete synthesis");
+        throw new Error(`Synthesis provider failure: ${response.errorMessage ?? response.stopReason}`);
       const state = validate(
         JSON.parse(
           response.content
@@ -262,6 +271,7 @@ export default function handoff(pi: ExtensionAPI) {
         ctx.hasPendingMessages() ||
         ctx.sessionManager.getLeafId() !== leaf ||
         ctx.model !== model ||
+        pi.getThinkingLevel() !== generation.thinking ||
         JSON.stringify(pi.getActiveTools()) !== tools
       )
         throw new Error(
@@ -276,9 +286,14 @@ export default function handoff(pi: ExtensionAPI) {
         recovery:
           "Use handoff_evidence search for exact lexical details missing here; read verified anchors. Original history remains authoritative.",
         handoff: randomUUID(),
+        project: {
+          revision: project.revision, observedAt: project.observedAt,
+          verification: "Read-only observation; historical test passes are not current verification.",
+          recovery: "Read current workspace files for current facts. Search handoff_evidence for recorded historical project snapshots.",
+        },
         state,
         provenance:
-          "Quotes verified; claim meanings remain model interpretations.",
+          "Source identities verified by program; supplied quotations checked literally. Claim meanings remain model interpretations.",
         evidence: evidenceIndex(
           originals,
           ctx.sessionManager.getSessionId(),
@@ -317,7 +332,20 @@ export default function handoff(pi: ExtensionAPI) {
           summary,
           firstKeptEntryId: event.preparation.firstKeptEntryId,
           tokensBefore: event.preparation.tokensBefore,
-          details: { plugin: "pi-handoff", version: 1, state },
+          details: {
+            plugin: "pi-handoff",
+            version: 1,
+            state,
+            generation: { ...generation, usage: response.usage },
+            nativeLimit: policy.nativeLimit(),
+            evidenceRecord: {
+              historyHash: history,
+              sources: originals.map(({ id, role, hash, timestamp }) => ({
+                id, role, hash, timestamp,
+              })),
+              project,
+            },
+          },
         },
       };
     } catch (error) {

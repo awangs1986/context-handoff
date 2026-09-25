@@ -1,4 +1,6 @@
-# Pi Handoff acceptance — SPEC revision 2
+# Pi Handoff acceptance
+
+## Historical SPEC revision 2 acceptance
 
 Date: 2026-09-24. Scope: PH-01–PH-08 (Gitea child issues #2–#9).
 The owner authorized TDD at the whole Pi conversation seam. The parent issue #1
@@ -103,3 +105,97 @@ work and the delegated-work adapter contract. Unknown asynchronous host state,
 other Pi versions, remote filesystem durability and other provider protocols are
 not silently advertised as tested. Original history beyond the bounded scan or
 mandatory requirements beyond the preparation budget causes an explicit stop.
+
+
+## SPEC revision 3 — 2026-09-25
+
+The owner authorized four corrections and real-provider evaluation at the public
+Pi RPC conversation seam. No Pi core changes or production deployment were made.
+
+### Changes and regression evidence
+
+- Native success cadence is configurable (1–100, default 3). Tests distinguish the
+  configured next boundary from immediate switching after the preceding success.
+- Concise source references replace model-generated quotation/metadata copying.
+  The program binds hashes/timestamps, records bounded project observations in
+  native compaction details, and exposes historical snapshot recovery separately
+  from current workspace facts.
+- Synthesis inherits the active reasoning level, uses model-bounded output capacity
+  (reasoning default 16384) and a reasoning default deadline of 120 seconds.
+  Cases cover overrides, model capacity clamping, invalid configuration and safe
+  deadline failure without a silent native fallback.
+- The live script exercises actual automatic thresholds and hidden continuation.
+  It forwards precisely the request bytes it records and leaves responses unchanged.
+- A real run exposed repeated alternating evidence reads: earlier evidence was
+  evicted after every assistant tool call. A new public conversation test failed
+  because two recovered sources could not coexist, then passed after retaining
+  evidence within the current user turn under a 32 KiB content window. New input
+  expires previous-turn evidence; original history and tool pairing remain intact.
+
+New RED observations included unknown cadence/budget CLI options, concise source
+references failing installation, and loss of the first evidence result after the
+second recovery call. These are distinct from provider/model output variability.
+
+Final `npm run check`: TypeScript build and **38 tests passed** in 2 files
+(67.97 seconds): 34 Pi conversation cases and 4 unchanged historical cases.
+`git diff --check` passed.
+
+### Live methodology and preserved findings
+
+Provider: the owner's NewAPI endpoint; model `gemini-3.8-flash`, thinking `high`.
+The endpoint's available models were used rather than claiming the originally
+requested OpenRouter model had been tested here. Credentials and raw transcripts
+remain outside Git. The opt-in script is `scripts/evaluate-live.mjs`.
+
+The synthetic combined scenario covers an owner correction (90 → 17), conservative
+mode, a rejected approach, current revision r3 versus historical tests at r1,
+`E_PARSE_42`, a UTF-8 identifier, original retry 137ms versus an untrusted 900ms
+suggestion, version 4.2.1, and a protected audit file. Expected results are fixed
+independently of synthesis output.
+
+The local provider declaration uses context 131072, reserve 131071 and retained
+recent tail 128 to reach automatic boundaries cheaply. This is an orchestration
+acceptance setup, not a full-production-context workload. Checkpoint responses
+supply enough fresh text for Pi to prepare compaction. The script never calls the
+manual compact RPC. It disables additional compaction after the fourth event to
+bound the evaluation. Exactly four user messages are sent, with no fifth prompt
+or manual continuation after Handoff.
+
+`revision3-live-01`: PASS, three automatic native compactions plus one automatic
+Handoff, same session, autonomous completion, original search and scoped read,
+9/9 exact output fields and protected audit file unchanged. Synthesis actually sent
+high / 16384, returned HTTP 200 / stop in 9.594 seconds, with 5205 input and 2350
+completion tokens reported by the provider. The run used 33 model requests and
+20 evidence calls (2 search, 18 read); eventual correctness did not excuse the
+repeated-read defect described above.
+
+Earlier testing had a measurement defect: one proxy modified the parsed
+`reasoning_effort` for its saved record but forwarded the unchanged request bytes.
+That run does not prove high was sent for synthesis. Separate direct budget probes
+really sent high: 4096 and 8192 ended at length; 16384 produced parseable JSON in
+58.39 seconds. Parseable JSON alone was never semantic/plugin acceptance. The new
+script captures and forwards the same bytes, fixing that measurement problem.
+
+These samples establish bounded successful continuation, not a universal fidelity
+improvement over native-only compaction, nor an optimal cadence of three. Wider
+paired workloads and repeated cycles remain necessary for those comparative claims.
+
+
+`revision3-live-02` (after the evidence-lifetime fix): **FAIL** against the unchanged
+strict oracle. The automatic 3+1 chain, same session, four user messages, autonomous
+continuation, original scoped reads and protected file all passed. Output fields
+were 8/9 correct: identifier was `Résumé-ID: ZX_729/β` instead of `ZX_729/β`.
+The wrong prefix was already present in synthesis claim c6 and survived original
+reads. Search happened before Handoff because the model called the tool in its
+release response despite the no-tools instruction; the required post-Handoff
+search was absent. This is a preserved behavior/semantic failure, not a network
+failure, and the expected output was not relaxed to make it pass.
+
+This run used 22 model requests and 7 evidence calls. Synthesis sent high / 16384,
+returned HTTP 200 / stop in 9.600 seconds, with 6375 input and 1512 completion
+tokens. Fewer evidence calls in one stochastic rerun are not a controlled speedup
+claim; the deterministic regression establishes the evidence-lifetime correction.
+All four engineering changes are implemented, but strict real-model acceptance
+on the final implementation is **not fully passed**. Further semantic work should
+address exact-value interpretation and preservation of pending procedural
+requirements, retaining this sample as a regression workload.

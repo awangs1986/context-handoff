@@ -1,7 +1,7 @@
 # Pi Handoff Plugin
 
-Revision 2 — 2026-09-24. Status: implemented on the implementation branch; see docs/plugin-acceptance.md for bounded engineering evidence and remaining semantic limits.
-This specification supersedes revision 1's adaptation/import development plan.
+Revision 3 — 2026-09-25. Status: implemented on the implementation branch; see docs/plugin-acceptance.md for bounded engineering evidence and remaining semantic limits.
+This revision implements the owner's four requested corrections: configurable cadence, concise model state with program-owned evidence, model-aware generation, and automatic conversation acceptance. Revision 1's adaptation/import plan remains superseded.
 Tracking: [Issue #1](http://192.168.100.1:3000/awangs/Context-handoff/issues/1) (`ready-for-agent`).
 
 ## Problem Statement
@@ -22,9 +22,9 @@ baseline, and its test results do not satisfy this specification.
 
 ## Solution
 
-Provide a Pi plugin that lets three successful native summary compactions occur.
-When the next compaction would begin, perform an automatic Handoff instead of a
-fourth native summary compaction. Do not hand off immediately after the third
+Provide a Pi plugin that defaults to three successful native summary compactions. The cadence is configurable (1–100 native successes); three is an initial policy, not an empirically optimal or safe bound.
+When the next compaction would begin, perform an automatic Handoff instead of the
+next native summary compaction (the fourth with default settings). Do not hand off immediately after the third
 success. If the task finishes before another compaction is needed, finish normally.
 
 The user remains in the same visible Conversation with continuous history,
@@ -88,13 +88,13 @@ claimed, and three compactions is a policy choice rather than a proven safe boun
 
 2. **One principal testing seam.** Use Pi's public conversation lifecycle as the principal Interface: feed normal user input and compaction events, observe outgoing provider requests, visible history, continuation and recovery. Keep policy, source selection, packet persistence and context installation inside the Handoff module where possible. Do not expose a collection of management tools merely to make internal functions testable. The owner confirmed this whole-conversation acceptance level.
 
-3. **Success-based cadence.** Persist committed native summary compaction counts for the active conversation lineage/branch. Count manual and automatic native successes once; failures, cancellations, retries, process starts and Handoff synthesis calls do not count. Before success three, do not replace native summarization. At the next would-compact boundary, Handoff owns recovery and prevents a competing fourth native summary. Successful Handoff resets the new cycle to zero; failed preparation does not.
+3. **Success-based cadence.** Persist committed native summary compaction counts for the active conversation lineage/branch. Count manual and automatic native successes once; failures, cancellations, retries, process starts and Handoff synthesis calls do not count. Before the configured native-success count (default three), do not replace native summarization. At the next would-compact boundary, Handoff owns recovery and prevents a competing fourth native summary. Successful Handoff resets the new cycle to zero; failed preparation does not.
 
 4. **Logical continuity is mandatory; physical session strategy is open.** Preserve one user-visible Conversation and its history/resources. Either rebuilding active context inside the native session or internally replacing a session may be used if supported by public Pi interfaces and the complete contract. A plugin that merely starts a new visible conversation fails acceptance. Validate the supported mechanism before committing to storage or transition architecture; an unsupported host must not advertise seamless operation or silently fall back to a visible new conversation.
 
 5. **Autonomous continuation.** Capture whether there is active authorized work and its next bounded action. After successful context installation, continue that work through the supported Pi lifecycle without requiring user input. Do not manufacture new authorization, duplicate user messages, or restart completed/cancelled work. A recovered transition must not issue a second continuation for an action whose execution status is uncertain.
 
-6. **Task State is prepared for Handoff.** Assemble objective and acceptance conditions, effective constraints, owner corrections, accepted/superseded decisions, relevant rejected approaches, completed/remaining work, blockers, uncertainties and next action. Attach source identity and provenance to important claims. The new design does not require continuously maintained notes or a general memory framework.
+6. **Task State is prepared for Handoff.** The model returns at most 12 concise claims with source IDs, status and one next action. The program resolves source IDs into hashes/timestamps, records current project observations, and preserves original messages in native history. Source IDs identify whole messages, not verified entailment; optional legacy quotes are checked literally. Do not ask the model to reproduce transcripts, hashes, timestamps or an exhaustive state. Assemble objective and acceptance conditions, effective constraints, owner corrections, accepted/superseded decisions, relevant rejected approaches, completed/remaining work, blockers, uncertainties and next action. Attach source identity and provenance to important claims. The new design does not require continuously maintained notes or a general memory framework.
 
 7. **Original-source selection.** Use relevant original user messages, verified project artifacts and observed development evidence. Prioritize corrections and active requirements; do not define correctness as keeping only the first line or the first/recent N messages. Generated summaries can help locate originals but cannot be the sole authority in subsequent Handoffs. When selection is bounded, expose coverage and omissions; do not silently proceed past an unresolved constraint essential to the next action.
 
@@ -110,7 +110,7 @@ claimed, and three compactions is a policy choice rather than a proven safe boun
 
 13. **Evidence ownership and ingress.** Preserve original admitted history and existing evidence stores. Handoff must not resurrect rejected search material, duplicate entire transcripts into a competing store, or bypass a host's ingress limits. Packet/evidence state belongs to the owning Conversation and stays out of repository commits and public logs. Treat preserved images and attachments honestly: retaining a file pointer does not prove its visual content was understood.
 
-14. **Bounded preparation.** Set explicit source-input, generated-state, index, retrieval, output-headroom, deadline and retry budgets before implementation acceptance. Use the selected model through supported provider interfaces when synthesis is necessary; deterministic checks validate references and metadata. Reject incomplete/failed generation rather than installing a partial context as complete. Report estimates distinctly from provider usage. Exact numeric budgets are engineering choices, not inherited P6 constants.
+14. **Bounded preparation.** Set explicit source-input, generated-state, index, retrieval, output-headroom, deadline and retry budgets before implementation acceptance. Use the selected model through supported provider interfaces when synthesis is necessary; deterministic checks validate references and metadata. Reject incomplete/failed generation rather than installing a partial context as complete. Report estimates distinctly from provider usage. Inherit Pi thinking strength through the public provider API. Defaults are 16,384 output tokens and 120 seconds with reasoning, or 4,096 tokens and 60 seconds with reasoning off. Output includes provider reasoning and is capped by model output capacity, half its context, and conservative source headroom. Explicit flags allow 1,024–65,536 output tokens and 100–300,000 ms deadlines. Cancellation remains immediate and generation retries remain zero. Output truncation, provider failure and deadline expiry must be distinguishable. These values are engineering choices, not proven safe bounds.
 
 15. **Safe transition.** Prepare an immutable snapshot, validate its lineage/resources, durably establish the replacement context and then continue. Settle active tools and delegated work first; unknown action status is not permission to replay. New input, cancellation or changed project state during preparation must be reconciled before commit. Preserve tool-call/result pairing and provider-specific constraints in every outgoing request.
 
@@ -163,3 +163,24 @@ fd8095e69ca3317b52fb58adccf9745a3dc18dfa. Their mechanisms are references, not p
 of this plugin's efficacy. See the maintained research note and source inventory.
 The related research distinguishes raw-byte recoverability from correct task
 continuation, and cumulative processed tokens from active context capacity.
+
+
+## Revision 3 acceptance additions
+
+- Exercise non-default cadence, inheritance of high reasoning, model output caps,
+  deadline/cancellation failure and invalid configuration through Pi RPC.
+- Recover deterministic historical project observations by the same scoped evidence
+  tool. Those observations never become current verification or owner authority.
+- A real-provider run must use four actual automatic threshold boundaries with
+  three native entries followed by one Handoff. Require same session, exactly four
+  user messages, hidden autonomous continuation and correct deliverable without a
+  fifth user prompt. Source recovery requires both search and scoped read.
+- Preserve all failed attempts. Direct JSON parsing, manual fourth compaction or a
+  correct answer after a follow-up are not substitutes for full acceptance.
+- Real-provider recording must forward the recorded body and upstream bytes
+  unchanged, including reasoning, limits and usage. Lowered local compaction
+  thresholds are explicit test conditioning, not production capacity measurements.
+
+### Recovered evidence lifetime
+
+Keep recovered evidence across intermediate tool calls in the same user turn, within a 32 KiB content window. Evict oldest evidence on capacity pressure and clear prior-turn evidence on new user input. Keep tool call/result pairing and original recovery available; a tool call alone does not establish that earlier evidence has been consumed.

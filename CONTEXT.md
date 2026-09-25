@@ -36,3 +36,10 @@ _Avoid_: individual model request
 A native Pi session contributing to one Conversation if the implementation
 uses internal session replacement.
 _Avoid_: new task, new checkout
+
+
+**Evidence Record**:
+Program-owned source identities, integrity hashes, observation timestamps and
+read-only project snapshots committed with a Handoff in native session history.
+Model Task State cites this evidence; historical observations are not current
+verification and reference integrity does not prove semantic entailment.

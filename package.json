@@ -2,7 +2,7 @@
   "name": "context-handoff",
   "version": "0.1.0",
   "private": true,
-  "description": "Pi plugin: attributed same-conversation Handoff at the fourth compaction boundary",
+  "description": "Pi plugin: configurable attributed Handoff within the same conversation",
   "type": "module",
   "engines": {
     "node": ">=22.19.0"
