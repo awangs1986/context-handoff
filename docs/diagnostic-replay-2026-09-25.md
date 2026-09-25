@@ -153,7 +153,75 @@ original synthesis happened to validate. It establishes integration did not
 block that run, but cannot attribute its success to repair. The prototype was
 not merged into the implementation branch.
 
+## Procedure-score correction
+
+A later mixed-provider experiment supplied controlled replies only for the
+first three native compactions; all other requests went to the real model. It
+forced an indexed repair, committed the fourth Handoff and produced the correct
+answer in the same Pi session. Its initial score marked it as passing because
+the scorer counted any post-boundary search and read, regardless of when the
+answer was written. The session trace shows the agent first read an old anchor
+and wrote `answer.json`, then searched and read the corrected source. This run
+**fails** the owner's required search-then-read-before-answer procedure. The
+earlier passing label for this run is withdrawn. Controlled native replies also
+mean it cannot establish a fully real-provider comparison.
+
+The revised scorer requires a fourth boundary, the first successful evidence
+action to be the target search, a verified user-source read of an anchor
+returned by that search, and both results to complete before the first
+successful answer write. Blocked tool attempts are counted separately. It also
+records provider errors separately. Re-scoring all ten saved ConFiQA-derived Pi
+traces changed only the mixed-provider run from pass to fail; two prior
+full-provider Handoff runs still pass under this procedure, but neither
+exercised repair. Versioned score files are retained outside Git beside their
+original scores. The method is implemented in
+`scripts/score-confiqa-procedure.mjs` and applied by
+`scripts/evaluate-confiqa.mjs`; synthetic positive and counterexample traces
+cover premature writes, blocked attempts, wrong anchors and a missing fourth
+boundary.
+
 ## Product direction
+
+### Isolated order-guard prototype
+
+An unmerged experimental checkout registers Pi's `tool_call` and `tool_result`
+hooks. It activates only when an installed active Task State has pending,
+attributed post-Handoff search and read steps. Until a successful search
+returns a user anchor, it blocks other tools. Until a read of an anchor from
+that result returns verified original user text, it continues blocking other
+tools. A blocked call returns a visible reason to the agent, so the same
+authorized task can proceed in the same conversation. A public Pi lifecycle
+test first failed without this guard; with it, an attempted premature answer
+write and a wrong-anchor read were blocked, then the search, correct read and
+answer write succeeded. The isolated checkout passed 42 scripted tests.
+
+The earlier failing mixed-provider QA 7 case was rerun with this guard,
+separate evidence tools and forced indexed repair. The first three native
+summary replies were controlled; all agent, synthesis, repair and continuation
+requests used `gemini-3.8-flash` at `high`. All four threshold boundaries
+occurred, the fourth committed Handoff, repair was actually called, and the
+same session completed the target search, verified original read and correct
+`English` answer in order. The strict rescored result passed. It used 15
+requests with reported totals of 57,821 input and 10,733 output tokens. The
+agent did **not** attempt a premature write in this run, so the live result
+does not isolate a benefit from the guard. This remains a mixed-provider,
+single-item diagnostic, with artifacts outside Git. The guard is not a
+production feature; its resume, user-interruption and applicability rules
+still need engineering review.
+
+A second QA 7 run used the real provider for **all** 19 model requests,
+including all three native summaries, with the same experimental interface,
+order guard and forced indexed-repair fault. The injected fault made repair
+necessary even though the original synthesis output had validated; it does
+not measure natural repair frequency. All four automatic threshold boundaries
+completed, the fourth was Handoff, the session ID stayed stable, and no fifth
+user message was needed. The agent searched the target marker, read the
+returned verified user anchor, then wrote the exact `English` answer. The
+strict score and independent rescore passed, with no provider errors or
+blocked answer attempts. Reported usage was 92,816 input and 31,954 output
+tokens; wall time was 506 seconds. This demonstrates that the combined
+experimental path can complete one fully real-provider Pi conversation, not
+that it outperforms native compaction or that the guard caused success.
 
 1. **First, make Task State production dependable.** Keep fail-closed
    validation. A tightly bounded *indexed* validator-feedback patch is the
@@ -171,9 +239,18 @@ not merged into the implementation branch.
    tests and a full live cohort with committed Handoffs before defaulting it.
 3. **Keep separate acceptance gates.** A correct final answer from retained
    context is semantic success, not proof of Handoff. Report synthesis validity,
-   committed boundary, autonomous continuation, exact original read, final
-   answer and total provider usage as separate metrics. Preserve failed and
-   timed-out requests; do not exclude them from future cohort summaries.
+   committed boundary, autonomous continuation, ordered exact original read
+   *before the first answer write*, final answer and total provider usage as
+   separate metrics. Preserve failed and timed-out requests; do not exclude
+   them from future cohort summaries.
+4. **Investigate execution-order protection.** A valid installed Task State
+   did not make the agent follow its first required evidence action in the
+   mixed-provider run. Pi 0.87.1 exposes a pre-execution `tool_call` hook that
+   can block a call with a reason. A narrowly scoped guard may prevent an
+   answer write before an authorized post-Handoff search and verified read.
+   This is a candidate, not a demonstrated product fix; it must be checked
+   through the public Pi lifecycle and against failed searches, wrong anchors,
+   cancellation, completed tasks and new user input before adoption.
 
 The current product code was not changed by this diagnostic. The experimental
 checkout is separate from the implementation branch. The observed positive

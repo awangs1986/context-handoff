@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, relative, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
+import { scoreConfiqaProcedure } from './score-confiqa-procedure.mjs';
 
 const repo = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const [directory, dataset, indexText, arm] = process.argv.slice(2);
@@ -135,16 +136,7 @@ finally {
   const protectedIntact = (await readFile(join(cwd, 'audit.log'), 'utf8')) === 'KEEP-AUDIT';
   const compactions = entries.map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.type === 'compaction');
-  const split = compactions[3]?.index ?? entries.length;
-  const calls = entries.flatMap((entry, index) =>
-    entry.type === 'message' && entry.message.role === 'assistant' &&
-    Array.isArray(entry.message.content)
-      ? entry.message.content.filter(c => c.type === 'toolCall')
-        .map(c => ({ index, name: c.name, arguments: c.arguments })) : []);
-  const after = calls.filter(c => c.index > split);
-  const search = after.filter(c => c.name === 'handoff_evidence' &&
-    c.arguments?.action === 'search' && String(c.arguments?.query ?? '').includes(marker));
-  const read = after.filter(c => c.name === 'handoff_evidence' && c.arguments?.action === 'read');
+  const procedure = scoreConfiqaProcedure(entries, marker, expected);
   const compactionEvents = events.filter(e => e.type === 'compaction_end');
   const answerText = String(answer?.answer ?? '').trim().toLowerCase();
   const expectedText = expected.trim().toLowerCase();
@@ -155,7 +147,9 @@ finally {
     answer: answer?.answer ?? null, answerCorrect: answerText === expectedText,
     historicalLeak: answerText === historicalText,
     exactKeys: !!answer && Object.keys(answer).length === 1,
-    searchAfter: search.length, readAfterSearch: read.some(r => search.some(s => s.index < r.index)),
+    searchAfter: procedure.searchCalls,
+    readAfterSearch: procedure.verifiedReadAfterSearch,
+    procedure,
     boundaryCount: compactions.length,
     fourthKind: compactions[3]?.entry.details?.plugin === 'pi-handoff' ? 'handoff' :
       compactions[3] ? 'native' : 'missing',
@@ -165,6 +159,8 @@ finally {
     sessionStable: actualSessionId === sessionId,
     userMessages: entries.filter(e => e.type === 'message' && e.message.role === 'user').length,
     requests: requests.length,
+    providerErrors: requests.filter(r => r.error || r.status >= 400).map(r => ({ n: r.n,
+      status: r.status, error: r.error })),
     usage: requests.reduce((sum, r) => ({
       input: sum.input + (r.usage?.prompt_tokens ?? 0),
       output: sum.output + (r.usage?.completion_tokens ?? 0),
@@ -172,8 +168,8 @@ finally {
     }), { input: 0, output: 0, reportedRequests: 0 }),
     error: error ?? null, protectedIntact, wallMs: Date.now() - start,
   };
-  score.pass = score.answerCorrect && score.exactKeys && score.searchAfter > 0 &&
-    score.readAfterSearch && score.boundaryCount === 4 && score.sessionStable &&
+  score.pass = score.providerErrors.length === 0 && score.answerCorrect &&
+    score.exactKeys && procedure.valid && score.boundaryCount === 4 && score.sessionStable &&
     score.userMessages === 4 && protectedIntact && !error &&
     score.compactionEvents.length === 4 && score.compactionEvents.every(e =>
       e.reason === 'threshold' && !e.error && !e.aborted) &&
