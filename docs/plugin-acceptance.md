@@ -390,5 +390,6 @@ read tool names. The paired evaluator now credits a search only after the fourth
 boundary and still requires the read to follow that search. It rejects a read
 without a post-boundary search even when an earlier search exists. The integrated
 suite after this scorer update passed **66 tests in 6 files** (78.67 seconds).
-A fresh full paired live comparison is running separately; its artifact directory
-is outside the repository and will be reported without changing earlier scores.
+A fresh full paired live comparison was subsequently completed; see the latest
+rerun section in `conflictqa-derived-evaluation-2026-09-25.md`. Earlier scores
+remain unchanged.

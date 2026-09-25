@@ -303,3 +303,59 @@ search ordering. A bounded timing-patch regression distinguishes a missing searc
 from an existing search whose phase/status needs repair. See plugin-acceptance.md for the final integrated check.
 These are deterministic Pi RPC tests, not a new paid model comparison; the
 single-run live outcomes and comparative limits above remain unchanged.
+
+## Real-model rerun after durable-order repair (2026-09-25)
+
+The entire predeclared paired cohort was run again after the restart/paging/order
+repairs and after updating the independent evaluator for the split search/read API.
+Provider: the owner's NewAPI endpoint, model `gemini-3.8-flash`, thinking `high`
+on every captured request. Both scenarios, two repetitions, both arms, and the
+same fifth prompt for every saved session completed. Exact request bodies were
+forwarded unchanged. Local context compaction settings remained intentionally
+small so Pi reached four actual automatic boundaries. Synthetic workspaces,
+records, and answers only. Raw requests, responses, sessions, and progress logs
+are outside Git in `work/paired-eval-after-durable-fix-01`.
+
+| Arm | Autonomous strict passes | Fields correct (mean / 9) | Post-boundary search | Search then read | Mean reported tokens / run |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Native | 0/4 | 2.25 | 0/4 | 0/4 | 58,383 |
+| Handoff | 1/4 | 6.75 | 3/4 | 2/4 | 543,194 |
+
+All four native fourth summaries occurred, but three sessions made no autonomous
+post-boundary agent request. One continued and got all fields right, but did not
+meet post-boundary search/read ordering. Handoff installed three states; one
+synthesis returned parseable-provider HTTP 200 with `stop`, but its fourth
+compaction was aborted before a state was committed. Of the other three, one
+passed fully. Another found the required source but exhausted the 42-request
+per-run budget before producing the answer. The fourth read after searching but
+still failed the complete-conversation oracle. Handoff performed 24 verified
+reads across its four runs, with repeated reads contributing to high usage.
+
+Every Handoff run used more reported tokens than its matched native run. Total
+autonomous usage was 2,172,776 reported tokens for Handoff versus 233,530 for
+native (about 9.3×). This is a token proxy, not a verified currency charge.
+The Handoff 42-request cap was reached in two runs; it bounds this test and is
+not a product runtime cap.
+
+With the identical fifth user prompt, native passed 3/4; one additional native
+attempt had an incomplete provider response and no usable answer. Handoff passed
+2/4. All four Handoff follow-up answers had 9/9 expected fields, but two failed
+the required fresh-search-then-read procedure. Follow-up usage was 998,203 tokens
+for Handoff and 296,608 for native (about 3.4×); one Handoff recovery alone used
+885,624 input tokens. Reported costs in USD remain unavailable.
+
+The rerun shows a repeatable difference in this small workload: native compaction
+does not autonomously resume, while Handoff sometimes does. It does **not** show
+a broad fidelity or efficiency win. Autonomous Handoff passed only once in four
+runs, suffered a synthesis/validation abort, and made many duplicate recovery
+calls. When explicitly prompted later, native recovery passed at least as often
+and used fewer reported tokens in these samples. The validated restart guard and
+paging behavior are deterministic engineering evidence; these stochastic live
+outcomes do not establish that a model will consistently respect those controls
+or that the current Handoff prompt is ready for production.
+
+The updated scorer recognizes both `handoff_evidence` actions and the distinct
+`handoff_evidence_search` / `handoff_evidence_read` calls, while still requiring
+the search after boundary four and a later read. Its two regression cases and the
+full **66-test** suite passed before this live rerun. Earlier raw evaluations and
+their scores remain preserved as dated records.
