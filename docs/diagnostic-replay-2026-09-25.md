@@ -180,6 +180,13 @@ original scores. The method is implemented in
 cover premature writes, blocked attempts, wrong anchors and a missing fourth
 boundary.
 
+A later ConflictQA-derived pilot exposed an HTTP 200 stream containing a
+provider `data.error` frame. The evaluator now treats that as a provider error
+and also rejects streams that end without a finish reason. All twelve saved
+ConFiQA-derived runs were independently rescored with this additional stream
+inspection; their pass/fail classifications did not change. Original scores
+and earlier rescores remain untouched outside Git.
+
 ## Product direction
 
 ### Isolated order-guard prototype

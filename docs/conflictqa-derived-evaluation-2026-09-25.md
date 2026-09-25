@@ -1,0 +1,201 @@
+# ConflictQA-derived Pi conversation evaluation (2026-09-25)
+
+This method extends the ConFiQA correction test with a different failure mode:
+two original user-supplied sources have equal authority and disagree. A sound
+Handoff must retain **both** claims and the owner's instruction to report an
+unresolved conflict. The test does not ask the agent to decide the real-world
+answer from its prior knowledge. It is a derived Pi conversation test, **not**
+an official ConflictQA score.
+
+## Source and independent oracle
+
+The source is item 0 of the OSU-NLP-Group
+[`ConflictQA-popQA-chatgpt` JSONL](https://github.com/OSU-NLP-Group/LLM-Knowledge-Conflict),
+whose full file has SHA-256
+`835f7d80d009d10b077551779c0decfae6ede4ef7cfcfdc0c5148eda30516a2f`.
+Source text remains outside Git. The item supplies two conflicting occupation
+claims and their supporting passages. Our Pi protocol explicitly says those
+two user sources have equal authority and that the later turn is not a
+correction. The expected deliverable is an uncertainty report copying both
+claims exactly. This oracle comes from the test's user instruction, not from
+the benchmark's world-truth label.
+
+## Complete-conversation protocol
+
+`scripts/evaluate-conflictqa.mjs` sends three checkpoint turns and one RELEASE
+turn to Pi with `gemini-3.8-flash` at `high` reasoning. Each checkpoint must
+trigger a real automatic native summary compaction. RELEASE must trigger the
+fourth automatic threshold boundary. In the Handoff arm that boundary must
+install Task State in the same session and continue without a fifth user turn;
+in the native arm it must remain a native compaction. Both arms use the same
+source item, turn text, model, thinking level and active tools.
+
+After the fourth boundary, the agent must search each source marker separately,
+read a verified original user anchor returned by each search, then write
+`answer.json`. The file must contain only `status`, `alternatives` and `reason`:
+`status` must be `uncertain`, `alternatives` must equal the two original claims
+(in either order), and `reason` must state that they conflict. A protected file
+must stay unchanged. The score also requires four successful threshold events,
+one stable session, exactly four user messages, no provider errors and no
+hidden follow-up prompt.
+
+`scripts/score-conflict-procedure.mjs` scores actual successful tool results,
+not just proposed calls. It requires both result chains to finish before the
+first successful answer write. Blocked attempts are recorded separately.
+Synthetic traces check a valid chain, a premature write after one source and
+an unverified second source. Raw requests, responses and session entries are
+saved outside Git. Evaluation is opt-in and paid; credentials come only from
+`PI_HANDOFF_EVAL_API_KEY`.
+
+## Results
+
+The first full real-provider Handoff run finished with **failure** under the
+predeclared score. Three native threshold compactions succeeded. At the fourth
+boundary, a Handoff synthesis request returned, but Task State validation
+rejected exact-value records whose label contained the delimiter while
+`separator` was empty. Pi cancelled the fourth compaction. The agent later
+searched and read original history and wrote the correct uncertainty report,
+including both exact alternatives, **before any fourth boundary committed**.
+The score therefore reports 3 committed boundaries, no post-boundary evidence
+chain and no Handoff. It used 17 real model requests with no provider transport
+errors, reporting 105,634 input and 31,584 output tokens. A correct answer is
+not counted as successful Handoff.
+
+Inspection of the rejected state found a second problem: it contained pending
+read and write steps but omitted the user's explicit requirement to search
+again **after** Handoff. A pre-Handoff search had already happened. The
+original validator checks steps that are present, so it did not catch the
+missing search step; the exact-value error happened to reject this state
+first. An isolated public Pi lifecycle test reproduced the omission and
+showed that the experimental plugin would otherwise install it. A narrow
+independent obligation check now rejects a state with no pending post-Handoff
+search when an original user source explicitly requires one. This is an
+experimental fail-closed diagnosis, not yet an automatic repair or a default
+product behavior.
+
+The first isolated split-tool and indexed-repair run on the same item reached a
+committed fourth Handoff. Its state included the required pending search, and
+the repair request completed. The automatic continuation then received an
+HTTP 200 stream containing an explicit provider error frame. Pi recorded an
+empty assistant turn and produced no answer. The original scorer missed this
+because it checked HTTP status and transport exceptions, but not `data.error`
+inside the stream. A new stream inspector, synthetic regression test and
+versioned rescore now classify this run as a provider failure (request 11),
+separate from semantic or procedure failure. The failed trace is retained.
+
+A retry with stream-error detection also failed at the first continuation
+request; its failure is classified separately in the frozen diagnosis below.
+Keep failed and timed-out runs in the comparison; one item cannot estimate
+population-level fidelity or establish superiority over native compaction.
+
+## Frozen continuation diagnosis
+
+The first prototype continuation request failed with a stream-level provider
+error. The retry again committed Handoff and returned the **same** error on
+its first continuation request, now recorded correctly. Replaying that exact
+captured request byte-for-byte produced the same HTTP 200 error frame a third
+time (request SHA-256
+`98ed6c5372a294a4bb4225e43d0a5a549b97502e03bd1ea991a70bae561a127b`).
+The two live requests were different, but both asked the model to search for
+two markers in one next action.
+
+In a controlled frozen-request variant, only the final hidden continuation
+message changed: it asked for the first marker's search alone and deferred the
+second marker. This request completed in 4.2 seconds with a real
+`handoff_evidence_search` call for `CONFLICT-A-0000`, `finish_reason: tool_calls`
+and reported usage. The variant request SHA-256 was
+`31caf184978eb4e47abfdac0ceffd3ae07e7bdff490f8d10e7edbe05c4e5649c`.
+This isolates a request-shape sensitivity; it does not prove the provider's
+internal cause or establish a full-session gain.
+
+The isolated prototype now splits a source-authorized pending
+`Search handoff_evidence for A and B` step into two atomic read-only search
+steps, preserving both original markers and authorization. A public Pi
+lifecycle test failed before this change and passed after it. In the full
+ConflictQA-derived session with this candidate, the fourth Handoff committed,
+the first continuation request completed normally, and the agent wrote the
+correct uncertainty report with no provider errors. The strict result still
+failed: it searched Source B after Handoff, but read Source A from a
+**pre-Handoff** search result; its required post-Handoff Source A search and
+read occurred only after `answer.json` was written. The score was
+`recovered: [false, true]` across 22 requests, with reported totals of
+164,130 input and 35,910 output tokens. This is a concrete limit of atomic next actions:
+they improved the provider request but did not enforce the full procedure.
+
+The isolated order guard now tracks both required markers separately and
+allows an answer write only after each has a post-Handoff search result and a
+verified original user read. A scripted public Pi conversation reproduced the
+pre-Handoff anchor misuse and premature write, then passed after the guard
+blocked both attempts. In the first real-provider run of this combined
+candidate, the fourth Handoff and continuation completed without provider
+errors. The guard blocked a pre-Handoff Source A anchor read, and the agent
+then searched A after Handoff. It still wrote the correct report before
+reading Source A's exact occupation claim: its default 1,024-byte read
+contained the marker but not the claim later in the 3,719-byte original.
+The strict procedure score remained `recovered: [false, true]` across 22
+requests, with reported totals of 158,648 input and 25,906 output tokens.
+
+The guard's source-read condition now also checks any program-validated exact
+values attributed to that source. A scripted full Pi conversation first
+failed because a short read skipped `VALUE_A`; after the change it blocked
+the attempted write until a wider verified read included the exact value.
+In the first real-provider run with this condition, the Handoff committed and
+the guard blocked an old Source A anchor read. The model then searched A but
+used the default 1,024-byte read, which contained the marker without the
+claim. It repeated short search/read actions; RELEASE reached the evaluator's
+300-second limit with no answer write. Request 16 was aborted during cleanup,
+so this run is a timeout, not a successful uncertainty report. The guard
+prevented premature completion but its initial block reason did not explain
+that the read range was too short.
+
+The guard now explicitly says that an exact source value is missing and asks
+for a wider read (`limit: 4096`) or paged ranges. A scripted Pi lifecycle test
+checks this feedback and correct recovery. Both arms' RELEASE wait has been
+raised to 600 seconds for the next bounded comparison. Another real-provider
+run finished after 22 provider requests without a provider error. It committed
+the fourth Handoff in the same session and wrote the correct uncertainty report.
+The original score said `recovered: [false, true]` because it required the A
+marker and exact claim in one read result. The agent actually read the same
+verified A anchor at byte ranges 0–1024 and 950–1450 before writing. The ranges
+overlap, and their union contains both the complete A marker and exact claim.
+After a red-first regression test, the scorer now joins consistent overlapping
+verified ranges from the same searched original anchor, only before the first
+successful answer write. Independent rescore `score-rescored-v2.json` preserves
+the original `score.json` and reports `recovered: [true, true]`, `pass: true`.
+This run used 22 requests, with provider-reported totals of 143,532 input and
+57,505 output tokens; its elapsed time was 671 seconds. It is a successful
+single-item prototype observation, not a claim of population-level superiority.
+The guard has not been merged into the default plugin; restart, interruption,
+coverage of other step types and general wording remain open.
+
+## Same-item native comparison
+
+The native arm used the same source bytes, four user turns, model
+`gemini-3.8-flash`, `high` reasoning, Pi context settings, split evidence tools,
+and 600-second RELEASE deadline as the successful prototype arm. The Handoff
+limit alone changed from three to 100. Both saved sessions were rescored with
+the same `score-rescored-v2.json` procedure revision; original scores remain
+untouched.
+
+| Measure | Isolated Handoff prototype | Native fourth compaction |
+| --- | ---: | ---: |
+| Automatic threshold boundaries | 4 (3 native + Handoff) | 4 native |
+| Same session; user turns | Yes; 4 | Yes; 4 |
+| Post-boundary verified source recovery | A and B | Neither |
+| Correct uncertainty report written | Yes | No |
+| Strict autonomous-conversation pass | Yes | No |
+| Provider requests | 22 | 11 |
+| Provider-reported input / output tokens | 143,532 / 57,505 | 17,740 / 27,901 |
+| Elapsed time | 671 s | 172 s |
+| Provider errors | 0 | 0 |
+
+The native run's fourth threshold compaction committed, then Pi ended that
+turn. There was no post-compaction assistant action, no evidence call and no
+`answer.json`; its failure is a continuation failure under this protocol.
+The prototype's post-Handoff automatic continuation let it complete the task,
+at substantially higher request and token cost. This pair demonstrates one
+complete-conversation success of the experimental mechanism. It does **not**
+isolate semantic memory fidelity: a common fifth user prompt would be required
+to compare what each saved context remembers when both are made to continue.
+Neither outcome is an official ConflictQA benchmark score. The sample size is
+one item and one attempt per arm.

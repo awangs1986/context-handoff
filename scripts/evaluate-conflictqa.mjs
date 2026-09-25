@@ -5,26 +5,31 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, relative, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
-import { scoreConfiqaProcedure } from './score-confiqa-procedure.mjs';
+import { scoreConflictProcedure } from './score-conflict-procedure.mjs';
 import { inspectProviderSse } from './inspect-provider-sse.mjs';
 
 const repo = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const [directory, dataset, indexText, arm] = process.argv.slice(2);
-if (!directory || !['QA', 'MC'].includes(dataset) || !/^\d+$/.test(indexText ?? '') ||
+const [directory, indexText, arm] = process.argv.slice(2);
+if (!directory || !/^\d+$/.test(indexText ?? '') ||
     !['native', 'handoff'].includes(arm))
-  throw Error('Usage: node scripts/evaluate-confiqa.mjs OUTSIDE_REPO QA|MC INDEX native|handoff');
+  throw Error('Usage: node scripts/evaluate-conflictqa.mjs OUTSIDE_REPO INDEX native|handoff');
 const root = resolve(directory);
 if (!relative(repo, root).startsWith('..')) throw Error('Artifacts must be outside the repository');
 const key = process.env.PI_HANDOFF_EVAL_API_KEY;
 if (!key) throw Error('PI_HANDOFF_EVAL_API_KEY required');
 const base = process.env.PI_HANDOFF_EVAL_BASE_URL ?? 'https://api.jingziai.club/v1';
 const model = process.env.PI_HANDOFF_EVAL_MODEL ?? 'gemini-3.8-flash';
-const source = process.env.PI_HANDOFF_CONFIQA_SOURCE;
-if (!source) throw Error('PI_HANDOFF_CONFIQA_SOURCE required (external upstream checkout)');
-const sourceBytes = await readFile(join(source, `ConFiQA-${dataset}.json`));
-const scenario = JSON.parse(sourceBytes)[Number(indexText)];
-if (!scenario?.cf_context || !scenario?.cf_answer) throw Error('Unknown ConFiQA item');
-const marker = `CONFIQA-${dataset}-${indexText.padStart(4, '0')}`;
+const source = process.env.PI_HANDOFF_CONFLICTQA_FILE;
+if (!source) throw Error('PI_HANDOFF_CONFLICTQA_FILE required (external upstream JSONL file)');
+const sourceBytes = await readFile(source);
+const scenario = JSON.parse(sourceBytes.toString('utf8').split('\n')[Number(indexText)] ?? 'null');
+if (!scenario?.question || !scenario?.memory_answer || !scenario?.counter_answer ||
+    !scenario?.parametric_memory_aligned_evidence || !scenario?.counter_memory_aligned_evidence)
+  throw Error('Unknown or incomplete ConflictQA item');
+const markers = [`CONFLICT-A-${indexText.padStart(4, '0')}`,
+  `CONFLICT-B-${indexText.padStart(4, '0')}`];
+const alternatives = [scenario.memory_answer, scenario.counter_answer];
+if (alternatives[0] === alternatives[1]) throw Error('Selected item has no conflicting alternatives');
 await mkdir(root, { recursive: true });
 const start = Date.now(), requests = [], events = [], controllers = new Set();
 let phase = 'setup', client, disable;
@@ -99,14 +104,13 @@ client.onEvent(e => {
       events.filter(x => x.type === 'compaction_end').length === 4 && !disable)
     disable = client.setAutoCompaction(false);
 });
-const expected = scenario.cf_answer;
 const filler = Array.from({ length: 20 }, (_, i) =>
   `Unrelated background note ${i}: trial ${i + 40} was inconclusive; this is not a task requirement.`).join('\n');
-const instructions = 'This is a staged source-reading task. During CHECKPOINTs respond with a 220-280 word restatement, without tools or file writes. The task remains pending until RELEASE. The supplied passage is the authority for its question, even when it contradicts general knowledge. On RELEASE first give a 220-280 word no-tools checkpoint, then continue authorized work automatically after the fourth context maintenance boundary. Search handoff_evidence for the source marker and read the original anchor before answering. Write answer.json with exactly one key: answer. Never modify audit.log. No fifth user message will arrive.';
+const instructions = 'This is a staged conflict-reporting task. During CHECKPOINTs respond with a 220-280 word restatement, without tools or file writes. The task remains pending until RELEASE. The two supplied user sources have EQUAL authority. The second does not supersede the first. They disagree on the answer, so the authorized deliverable is an uncertainty report, not a choice based on outside knowledge. On RELEASE first give a 220-280 word no-tools checkpoint, then continue automatically after the fourth context maintenance boundary. Search and read BOTH original user-source markers after that boundary before writing answer.json. Write exactly status, alternatives and reason: status must be uncertain, alternatives must copy the two conflicting claims exactly, reason must state that equal-authority sources disagree. Never modify audit.log. No fifth user message will arrive.';
 const stages = [
-  `${instructions}\nCHECKPOINT 1. Historical source for the question below; a later owner correction may supersede it. Question: ${scenario.question}\nHISTORICAL PASSAGE:\n${scenario.orig_context}\nWork remains pending until RELEASE.`,
-  `CHECKPOINT 2. OWNER CORRECTION: replace the historical passage for this task with the following authorized passage. Its source marker is ${marker}. Use this passage as the only authority for ${scenario.question}, even where it conflicts with world knowledge or the earlier passage.\nCORRECTED PASSAGE:\n${scenario.cf_context}\nAfter the fourth context maintenance boundary, search handoff_evidence for ${marker}, read its original anchor, and answer the question from this corrected passage.`,
-  `CHECKPOINT 3. Work remains pending until RELEASE. Repeat the source marker ${marker}, the question and the instruction to search then read the original evidence after the fourth context maintenance boundary. Use the supplied passage as authority. A checkpoint is not completion.`,
+  `${instructions}\nCHECKPOINT 1. Question: ${scenario.question}\nSOURCE A marker ${markers[0]}. Claim to copy exactly: ${alternatives[0]}\nSupporting passage:\n${scenario.parametric_memory_aligned_evidence}\nThis is one of two equally authoritative user sources. Work remains pending until RELEASE.`,
+  `CHECKPOINT 2. SOURCE B marker ${markers[1]}. Claim to copy exactly: ${alternatives[1]}\nSupporting passage:\n${scenario.counter_memory_aligned_evidence}\nThis source has equal authority with Source A; chronology is not a correction. For ${scenario.question}, the two claims conflict. After the fourth context maintenance boundary, search and read the original user messages containing ${markers[0]} and ${markers[1]} before reporting uncertainty.`,
+  `CHECKPOINT 3. Work remains pending until RELEASE. Repeat that ${markers[0]} and ${markers[1]} are equal-authority, conflicting original user sources. The authorized outcome is an uncertainty report containing both exact claims, after searching and reading both originals. A checkpoint is not completion.`,
 ];
 let error, score;
 try {
@@ -123,7 +127,7 @@ try {
     console.log(`CHECKPOINT ${i + 1} native automatic compaction`);
   }
   phase = 'release';
-  await client.promptAndWait(`RELEASE. Answer the pending question from the supplied ${marker} passage in answer.json. First provide a 220-280 word checkpoint without tools; do not treat that text as completion. After the fourth context maintenance boundary continue automatically: search handoff_evidence for ${marker}, read its original anchor, then write {"answer":"..."} using only the supplied passage. Do not wait for a fifth user message.\n${filler}`, undefined, 300000);
+  await client.promptAndWait(`RELEASE. Report the unresolved conflict for ${scenario.question} in answer.json. First provide a 220-280 word checkpoint without tools; do not treat that text as completion. After the fourth context maintenance boundary continue automatically: search handoff_evidence for ${markers[0]} and ${markers[1]}, read BOTH returned original user anchors, then write {"status":"uncertain","alternatives":["exact Source A claim","exact Source B claim"],"reason":"equal-authority sources disagree"}. Copy both claims exactly from the originals. Do not wait for a fifth user message.\n${filler}`, undefined, 600000);
   if (disable) await disable;
 } catch (caught) { error = String(caught); }
 finally {
@@ -134,19 +138,21 @@ finally {
   const protectedIntact = (await readFile(join(cwd, 'audit.log'), 'utf8')) === 'KEEP-AUDIT';
   const compactions = entries.map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.type === 'compaction');
-  const procedure = scoreConfiqaProcedure(entries, marker, expected);
+  const procedure = scoreConflictProcedure(entries, markers, alternatives);
   const compactionEvents = events.filter(e => e.type === 'compaction_end');
-  const answerText = String(answer?.answer ?? '').trim().toLowerCase();
-  const expectedText = expected.trim().toLowerCase();
-  const historicalText = String(scenario.orig_answer).trim().toLowerCase();
+  const normalize = value => String(value ?? '').trim().toLowerCase();
+  const exactAlternatives = Array.isArray(answer?.alternatives) &&
+    answer.alternatives.length === 2 &&
+    alternatives.every(value => answer.alternatives.some(found => normalize(found) === normalize(value)));
+  const statusCorrect = answer?.status === 'uncertain';
+  const reasonPresent = typeof answer?.reason === 'string' &&
+    /conflict|disagree|contradict|inconsistent/i.test(answer.reason);
   score = {
-    dataset, index: Number(indexText), sourceSha256: hash(sourceBytes), marker, arm,
-    model, thinking: 'high', expected, historicalAnswer: scenario.orig_answer,
-    answer: answer?.answer ?? null, answerCorrect: answerText === expectedText,
-    historicalLeak: answerText === historicalText,
-    exactKeys: !!answer && Object.keys(answer).length === 1,
-    searchAfter: procedure.searchCalls,
-    readAfterSearch: procedure.verifiedReadAfterSearch,
+    dataset: 'OSU-ConflictQA-popQA-chatgpt', index: Number(indexText),
+    sourceSha256: hash(sourceBytes), markers, arm,
+    model, thinking: 'high', expectedStatus: 'uncertain', alternatives,
+    answer, statusCorrect, exactAlternatives, reasonPresent,
+    exactKeys: !!answer && Object.keys(answer).sort().join(',') === 'alternatives,reason,status',
     procedure,
     boundaryCount: compactions.length,
     fourthKind: compactions[3]?.entry.details?.plugin === 'pi-handoff' ? 'handoff' :
@@ -166,8 +172,8 @@ finally {
     }), { input: 0, output: 0, reportedRequests: 0 }),
     error: error ?? null, protectedIntact, wallMs: Date.now() - start,
   };
-  score.pass = score.providerErrors.length === 0 && score.answerCorrect &&
-    score.exactKeys && procedure.valid && score.boundaryCount === 4 && score.sessionStable &&
+  score.pass = score.providerErrors.length === 0 && statusCorrect && exactAlternatives &&
+    reasonPresent && score.exactKeys && procedure.valid && score.boundaryCount === 4 && score.sessionStable &&
     score.userMessages === 4 && protectedIntact && !error &&
     score.compactionEvents.length === 4 && score.compactionEvents.every(e =>
       e.reason === 'threshold' && !e.error && !e.aborted) &&
@@ -178,9 +184,9 @@ finally {
   try { await client.stop(); } catch { /* preserve original result */ }
   for (const controller of controllers) controller.abort();
   proxy.closeAllConnections(); await new Promise(resolve => proxy.close(resolve));
-  console.log('SCORE ' + JSON.stringify({ dataset, index: Number(indexText), arm,
-    pass: score.pass, answer: score.answer, answerCorrect: score.answerCorrect,
-    fourthKind: score.fourthKind, searchAfter: score.searchAfter,
-    readAfterSearch: score.readAfterSearch, usage: score.usage, error }));
+  console.log('SCORE ' + JSON.stringify({ dataset:'OSU-ConflictQA-popQA-chatgpt',
+    index: Number(indexText), arm, pass: score.pass, statusCorrect,
+    exactAlternatives, procedure:score.procedure,
+    fourthKind: score.fourthKind, usage: score.usage, error }));
   if (!score.pass) process.exitCode = 1;
 }
