@@ -33,6 +33,14 @@ surface changed:
    original read and session identity. A second experiment also added the
    checklist and raised synthesis output capacity to 32,768 tokens. These
    experimental changes are not the product's default implementation.
+4. **Validator-feedback patch:** replay parseable but rejected Task States.
+   A small model response names only array indexes and corrected exact-value
+   label/separator or evidence-step phase/status. The program keeps original
+   values, source IDs, quotes, authorizations and unrelated claims unchanged,
+   rejects side-effect status rollback, recomputes the first pending next
+   action, and runs `validate` again. A separate oracle requires the original
+   post-Handoff search to remain pending. This tests a repair candidate, not a
+   production repair path.
 
 Frozen request SHA-256 values (raw requests remain outside Git):
 
@@ -43,12 +51,17 @@ Frozen request SHA-256 values (raw requests remain outside Git):
 | Synthesis, QA 7 | `610ac4af6b2232c89e140645280f4ec4952155b9d0485bfa31b213526dc4becb` |
 | Synthesis, MC 5 | `6f4406bc1a482dafcba262b5d26c918897394a6ef082327dba833df4070ad041` |
 
-`scripts/replay-evidence-call.mjs`, `scripts/replay-synthesis.mjs` and
-`scripts/replay-synthesis-repair.mjs` implement the diagnostics. They require
+`scripts/replay-evidence-call.mjs`, `scripts/replay-synthesis.mjs`,
+`scripts/replay-synthesis-repair.mjs` and
+`scripts/replay-synthesis-field-patch.mjs` implement the diagnostics. They require
 captured request/response paths and a new output directory outside Git;
 credentials are read only from `PI_HANDOFF_EVAL_API_KEY`. Raw replay requests,
 responses and per-run scores remain outside Git. They are opt-in paid tests and
 are not part of `npm test`.
+For a known timing requirement, set `PI_HANDOFF_REQUIRED_POST_SEARCH` to its
+exact marker when running the field-patch diagnostic. Set
+`PI_HANDOFF_REPLAY_RESPONSE_PATH` to rescore a saved response without another
+provider call.
 
 ## Evidence-tool choice
 
@@ -98,15 +111,59 @@ supports an end-to-end improvement claim for the combined prototype. The
 split-tool result remains a strong local diagnosis of the continuation-tool
 interface, conditional on reaching a valid Handoff.
 
+## Validator-feedback patch follow-up
+
+The first repair replay asked the model to regenerate the entire Task State;
+it exhausted its 16,384-token cap with incomplete JSON. A second design asked
+for complete replacement arrays and was also fragile: one result used an
+invalid whitespace-only separator and another damaged a long quoted tool
+result. A narrow indexed patch avoided copying original quotes or evidence.
+
+The final diagnostic requested only changed `exactValueSplits` and
+`stepChanges`. The program admitted only label/separator edits that kept each
+original exact value and quote, and only evidence-step timing changes supported
+by an original user instruction. Rolling a completed step back to pending was
+allowed solely for a read-only evidence search originally required after this
+Handoff; its pre-Handoff completion evidence was cleared. The first pending
+step and attributed next-action claim were reconciled, then the normal
+validator and a separate post-Handoff-search oracle both ran. A single,
+otherwise empty JSON code fence was stripped in one saved response; extra
+prose or unrelated fields would still fail.
+
+| Captured invalid QA Task State | Structural validation | Post-Handoff search pending | Repair tokens | Repair time |
+| --- | --- | --- | ---: | ---: |
+| Original pilot | Pass | Yes | 9,548 | 11.1 s |
+| Split-tool full Pi experiment | Pass | Yes | 11,405 | 35.2 s |
+| Split + checklist/cap full Pi experiment | Pass after strict fence parsing | Yes | 14,177 | 74.9 s |
+
+These are **3/3 successful frozen repairs of selected, parseable invalid
+states**, including the actual QA failure seen in the original pilot. Earlier
+draft repair attempts remain in the raw artifacts as failures. This does not
+cover truncated synthesis, unparseable original JSON, conflicting owner
+instructions or side-effect replay. The model's repair costs are substantial
+and must be included in any future product comparison.
+
+An isolated Pi experiment wired this constrained repair after normal
+validation. Its first run stopped before the fourth boundary when an upstream
+response stream timed out during native compaction, so it says nothing about
+repair. The retry completed four boundaries and passed the full QA acceptance
+checks: committed Handoff, same session, post-boundary search and read,
+correct answer. **No repair request occurred** in that successful run; the
+original synthesis happened to validate. It establishes integration did not
+block that run, but cannot attribute its success to repair. The prototype was
+not merged into the implementation branch.
+
 ## Product direction
 
 1. **First, make Task State production dependable.** Keep fail-closed
-   validation. Investigate a simpler exact-value representation or a tightly
-   bounded, validator-aware generation process that preserves source quotation
-   and action timing. Measure validation success, truncation, tokens and
-   latency separately. The tested checklist, larger cap and single repair
-   prompt did not solve the full-session failure, so none should be shipped as
-   a claimed fix.
+   validation. A tightly bounded *indexed* validator-feedback patch is the
+   strongest repair candidate so far: it preserved exact values and original
+   authorization and passed three frozen invalid states. Add an independent
+   timing oracle; structural validation alone accepted a state that treated a
+   required post-Handoff search as already completed. Test forced repair in
+   the public Pi lifecycle before adopting it. The checklist, larger cap and
+   whole-state retry did not solve the full-session failure; parseable-invalid
+   and truncated outputs need separate paths.
 2. **Then split evidence search and read.** Two small tools with their own
    required arguments are the best-supported interface candidate: 4/4
    correct next calls versus 0/4 for the current combined tool on frozen
