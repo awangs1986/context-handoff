@@ -1,4 +1,4 @@
-# Pi Handoff Plugin
+# Context-handoff
 
 Revision 3 — 2026-09-25. Status: implemented on the implementation branch; see docs/plugin-acceptance.md for bounded engineering evidence and remaining semantic limits.
 This revision implements the owner's four requested corrections: configurable cadence, concise model state with program-owned evidence, model-aware generation, and automatic conversation acceptance. Revision 1's adaptation/import plan remains superseded.

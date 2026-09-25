@@ -1,4 +1,4 @@
-# Pi Handoff implementation
+# Context-handoff implementation
 
 Implements SPEC revision 3 as a new Pi package. The Coffee import remains unchanged
 and is not linked by the package entry. Supported and tested runtime: Pi 0.87.1,

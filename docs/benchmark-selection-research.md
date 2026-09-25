@@ -1,4 +1,4 @@
-# Benchmark selection for Pi Handoff
+# Benchmark selection for Context-handoff
 
 Research date: 2026-09-25. This note checks first-party papers, repositories,
 dataset cards and scoring code. It selects an external source of **test items**;

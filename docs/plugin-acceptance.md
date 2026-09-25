@@ -1,4 +1,4 @@
-# Pi Handoff acceptance
+# Context-handoff acceptance
 
 ## Historical SPEC revision 2 acceptance
 

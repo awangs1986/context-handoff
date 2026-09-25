@@ -1,4 +1,4 @@
-# Pi Handoff Plugin
+# Context-handoff
 
 A Pi plugin that defaults to three successful native compactions, then replaces the
 next compaction with an attributed Handoff in the same visible conversation.
