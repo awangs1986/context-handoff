@@ -256,3 +256,29 @@ feedback are promising prototype changes because they addressed concrete
 failed traces. They need restart, interruption and cancellation validation
 before being merged into the default plugin. More items and repetitions are
 needed before choosing a fidelity policy.
+
+## Restart gate for the experimental order guard
+
+A controlled public Pi lifecycle test took the isolated prototype through a
+manual Handoff with pending `search → read → write` steps, stopped Pi, reopened
+the same saved session, and asked it to continue. The scripted provider proposed
+`write answer.json` before any new search or read. The write succeeded and the
+file contained the deliberately premature value. This is a **product behavior
+failure** for the candidate, not a scorer artifact. The test is retained as an
+expected failure in the isolated experiment, so its check suite distinguishes
+the known failure from passing acceptance tests.
+
+The current guard builds its obligation state only from the live
+`session_compact` event. It does not reconstruct that state on `session_start`,
+and its `input` handler clears the state. A restart followed by the user's
+ordinary “continue” input therefore bypasses the guard. The next product
+change should persist or replay source-bound obligations from the committed
+Handoff and successful tool receipts, then reconcile new user corrections and
+cancellation without silently discarding unfinished obligations. Validate
+restart, interruption, new input and cancellation through the same public Pi
+conversation seam before enabling this guard by default. The currently
+successful uninterrupted ConflictQA run does not pass this lifecycle gate.
+The isolated candidate and expected-failure test are preserved at
+[`experiment-field-repair` commit `7875565`](http://192.168.100.1:3000/awangs/Context-handoff/src/commit/7875565),
+separate from the default-plugin implementation branch. Its complete check
+reports 45 passing tests and one expected failure.
