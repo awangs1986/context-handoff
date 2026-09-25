@@ -19,7 +19,9 @@ export function scoreTrace({ entries, requests, events, answer, expected, bounda
   const after = allCalls.filter(c => c.index > split);
   const assistantAfter = entries.slice(split + 1).some(e =>
     e.type === 'message' && e.message.role === 'assistant');
-  const operation = (c, action) => c.name === 'handoff_evidence' && c.arguments?.action === action;
+  const operation = (c, action) =>
+    c.name === `handoff_evidence_${action}` ||
+    c.name === 'handoff_evidence' && c.arguments?.action === action;
   const afterSearch = after.filter(c => operation(c, 'search') &&
     String(c.arguments?.query ?? '').includes(requiredSearch));
   const afterRead = after.filter(c => operation(c, 'read'));

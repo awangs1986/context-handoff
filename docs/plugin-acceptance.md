@@ -384,3 +384,11 @@ and **64 tests in 5 files** (78.37 seconds): 47 Pi conversation cases, 13 evalua
 regressions and 4 unchanged historical packet cases. No expected-failure cases
 remain in this suite. `git diff --check` passed. No production installation,
 package publication or fresh paid model comparison was performed in this update.
+
+A follow-on evaluator regression adds two scorer tests for the new split search and
+read tool names. The paired evaluator now credits a search only after the fourth
+boundary and still requires the read to follow that search. It rejects a read
+without a post-boundary search even when an earlier search exists. The integrated
+suite after this scorer update passed **66 tests in 6 files** (78.67 seconds).
+A fresh full paired live comparison is running separately; its artifact directory
+is outside the repository and will be reported without changing earlier scores.
