@@ -47,6 +47,8 @@ npm pack
 - [Acceptance and TDD evidence](docs/plugin-acceptance.md).
 - [Domain vocabulary](CONTEXT.md).
 - [Prior-art research](docs/billion-context-task-state-research.md).
+- [Benchmark selection](docs/benchmark-selection-research.md) and
+  [ConFiQA-derived live pilot](docs/confiqa-derived-pilot-2026-09-25.md).
 - [Parent issue](http://192.168.100.1:3000/awangs/Context-handoff/issues/1).
 
 The old `src/context`, integration snapshots and four packet tests are historical
