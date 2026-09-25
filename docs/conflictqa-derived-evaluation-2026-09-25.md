@@ -199,3 +199,60 @@ isolate semantic memory fidelity: a common fifth user prompt would be required
 to compare what each saved context remembers when both are made to continue.
 Neither outcome is an official ConflictQA benchmark score. The sample size is
 one item and one attempt per arm.
+
+## Same-session fifth-turn diagnostic
+
+To separate automatic continuation from retained-context recovery, a new
+`evaluate-conflictqa-followup.mjs` method resumes copies of both saved sessions
+with the **same fifth user instruction**. It asks for a new
+`diagnostic-answer.json`, without supplying either marker or claim, and
+requires fresh original-history search, verified reads of both user sources,
+then the exact uncertainty report. The scorer begins at the fifth user
+message: prior Handoff searches, reads and answer writes earn no credit.
+The original `answer.json` remains in the Handoff copy, so the test also
+requires new verified reads rather than accepting a copied old file. No
+additional compaction is allowed. This is a prompted diagnostic, separate from
+the strict four-turn autonomous score.
+
+Pi stores the workspace path in the session header. An initial cloned-native
+attempt copied the session file without changing that header. Pi wrote the
+correct diagnostic report and performed both fresh evidence chains, but wrote
+to the original run's workspace while the harness inspected the clone. Its
+`score.json` is retained as an **invalid harness result**, not a native-arm
+semantic failure. The two generated files were preserved in that diagnostic
+directory and removed from the original workspace, restoring the original
+run. The corrected method rewrites only the cloned session header's workspace
+path, retains the same session ID and source history, and checks that the
+original workspace's relevant files remain byte-identical.
+
+The corrected fifth-turn pair used the same prototype extension, split evidence
+tools, model, `high` reasoning, prompt, and 600-second deadline.
+The runner takes the saved arm directory and a new output directory, with
+`PI_HANDOFF_EVAL_PLUGIN_ROOT` pointing to the isolated prototype checkout.
+That prototype is not activated or merged by this evaluation. Credentials are
+passed only through `PI_HANDOFF_EVAL_API_KEY`; session copies, requests and
+scores remain outside Git.
+
+Both arms passed the independent fifth-turn procedure and exact answer checks:
+
+| Measure | Native saved session | Handoff saved session |
+| --- | ---: | ---: |
+| Fresh post-prompt verified A/B recovery | Both | Both |
+| Exact uncertainty report | Correct | Correct |
+| Fifth-turn strict pass | Yes | Yes |
+| Provider requests | 11 | 8 |
+| Provider-reported input / output tokens | 84,801 / 4,187 | 90,411 / 1,684 |
+| Elapsed time | 58 s | 38 s |
+| Original workspace unchanged; provider errors | Yes; 0 | Yes; 0 |
+
+This pair does not show a semantic-retention advantage for Handoff. The native
+session retained enough information to search and recover both originals when
+prompted. Handoff reduced tool/model turns here, but consumed 92,095 reported
+tokens versus 88,988 for native in the fifth turn; one run cannot establish a
+cost or latency advantage. The directly observed product gain remains reliable
+automatic continuation at the fourth boundary. The split search/read tools,
+atomic next actions, multi-source order guard, and actionable read-range
+feedback are promising prototype changes because they addressed concrete
+failed traces. They need restart, interruption and cancellation validation
+before being merged into the default plugin. More items and repetitions are
+needed before choosing a fidelity policy.

@@ -41,12 +41,25 @@ const verifiedText = reads => {
     .map(fragment => fragment.text)];
 };
 
-export function scoreConflictProcedure(entries, markers, alternatives) {
+export function scoreConflictProcedure(entries, markers, alternatives, options = {}) {
   if (!Array.isArray(markers) || markers.length !== 2 ||
       !Array.isArray(alternatives) || alternatives.length !== 2)
     throw Error('Two markers and two alternatives are required');
-  const boundary = entries.findIndex((entry, index) => entry.type === 'compaction' &&
-    entries.slice(0, index + 1).filter(item => item.type === 'compaction').length === 4);
+  const startAfter = options.startAfter ?? 'fourth-compaction';
+  const answerPath = options.answerPath ?? 'answer.json';
+  if (!['fourth-compaction','fifth-user'].includes(startAfter))
+    throw Error('Unknown procedure boundary');
+  const targetsAnswer = call => {
+    const path = String(call.arguments?.path ?? '');
+    return path === answerPath || path.endsWith(`/${answerPath}`);
+  };
+  const boundary = entries.findIndex((entry, index) =>
+    startAfter === 'fourth-compaction'
+      ? entry.type === 'compaction' &&
+        entries.slice(0, index + 1).filter(item => item.type === 'compaction').length === 4
+      : entry.type === 'message' && entry.message.role === 'user' &&
+        entries.slice(0, index + 1).filter(item =>
+          item.type === 'message' && item.message.role === 'user').length === 5);
   const results = new Map(entries.flatMap((entry, index) =>
     entry.type === 'message' && entry.message.role === 'toolResult'
       ? [[entry.message.toolCallId, {index, message:entry.message,
@@ -64,7 +77,7 @@ export function scoreConflictProcedure(entries, markers, alternatives) {
   const evidence = calls.filter(call => call.success &&
     ['search','read'].includes(operation(call)));
   const writes = calls.filter(call => call.name === 'write' && call.success &&
-    /(^|\/)answer\.json$/.test(String(call.arguments?.path ?? '')));
+    targetsAnswer(call));
   const firstWrite = writes[0];
   const recovered = markers.map((marker, i) => {
     const searches = evidence.filter(call => operation(call) === 'search' &&
@@ -93,7 +106,7 @@ export function scoreConflictProcedure(entries, markers, alternatives) {
     recovered,
     answerWrites: writes.length,
     blockedAnswerAttempts: calls.filter(call => call.name === 'write' &&
-      call.blocked && /(^|\/)answer\.json$/.test(String(call.arguments?.path ?? ''))).length,
+      call.blocked && targetsAnswer(call)).length,
     valid: boundary >= 0 && firstEvidenceSearch && recovered.every(Boolean) &&
       writes.length > 0,
   };

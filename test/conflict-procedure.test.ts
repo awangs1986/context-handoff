@@ -71,4 +71,28 @@ describe('ConflictQA-derived conversation procedure', () => {
     expect(score.recovered).toEqual([true,true]);
     expect(score.valid).toBe(true);
   });
+
+  it('scores fifth-turn recovery without crediting evidence from the earlier turn', () => {
+    const earlierUsers = Array.from({length:4}, (_, i) =>
+      ({type:'message',message:{role:'user',content:[{type:'text',text:`Turn ${i + 1}`}]}}));
+    const fifthUser = {type:'message',message:{role:'user',content:[
+      {type:'text',text:'Recover both original sources again.'}]}};
+    const earlierOnly = scoreConflictProcedure([
+      ...earlierUsers,...boundary,...chain('a',markers[0],alternatives[0]),
+      ...chain('b',markers[1],alternatives[1]),write,written,
+      fifthUser,
+      call('w2','write',{path:'diagnostic-answer.json',content:'{}'}),result('w2',{ok:true}),
+    ],markers,alternatives,{startAfter:'fifth-user',answerPath:'diagnostic-answer.json'});
+    expect(earlierOnly.valid).toBe(false);
+    expect(earlierOnly.recovered).toEqual([false,false]);
+
+    const fresh = scoreConflictProcedure([
+      ...earlierUsers,...boundary,...chain('a',markers[0],alternatives[0]),
+      ...chain('b',markers[1],alternatives[1]),write,written,
+      fifthUser,...chain('c',markers[0],alternatives[0]),
+      ...chain('d',markers[1],alternatives[1]),
+      call('w2','write',{path:'diagnostic-answer.json',content:'{}'}),result('w2',{ok:true}),
+    ],markers,alternatives,{startAfter:'fifth-user',answerPath:'diagnostic-answer.json'});
+    expect(fresh.valid).toBe(true);
+  });
 });
