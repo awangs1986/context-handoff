@@ -1,3 +1,5 @@
+> **Historical source:** maintenance and new releases moved to [context-handoff](https://github.com/awangs1986/pi-coffee/tree/main/packages/context-handoff). See [MIGRATED.md](MIGRATED.md). The documentation below describes the retained standalone release.
+
 # Context-handoff
 
 Version **0.2.0-experimental.1** · [Changelog](CHANGELOG.md) · [Releases](docs/releases.md).

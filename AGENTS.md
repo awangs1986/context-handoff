@@ -1,3 +1,11 @@
+# Maintenance moved
+
+Read [MIGRATED.md](MIGRATED.md). This standalone repository is historical.
+Make source changes and new releases in the corresponding pi-coffee package.
+Existing tags and artifacts must remain unchanged.
+
+## Historical instructions
+
 # Context Handoff maintenance
 
 Read README.md, SPEC.md, CONTEXT.md and docs/implementation-status.md before changes.
